@@ -1,131 +1,123 @@
-# WideMelon
+<p align="center">
+  <img src="assets/widemelon.png" alt="WideMelon logo" width="220">
+</p>
 
-WideMelon is a small melonDS build with an experimental ultrawide 3D renderer.
-It keeps the Nintendo DS interface at its native proportions while allowing
-the submitted 3D scene to use a wider horizontal viewport.
+<h1 align="center">WideMelon</h1>
 
-WideMelon is a modified version of melonDS based on commit
-`906e9ebb27da8c6a715cd7abab4abfe8a8d29427`. The WideMelon modifications were
-first published in 2026 under GPL-3.0-or-later. WideMelon is an independent
-project and is not affiliated with or endorsed by the melonDS project,
-Nintendo, Game Freak, or The Pokémon Company.
+<p align="center">
+  An experimental widescreen build of melonDS.
+</p>
 
-The project does not contain a ROM, commercial BIOS files, or a separate
-launcher application. The patched melonDS executable opens a small native Qt
-configuration dialog when started without a WideMelon environment profile.
+<p align="center">
+  <a href="https://github.com/pruefsumme/widemelon/actions/workflows/ci.yml"><img src="https://github.com/pruefsumme/widemelon/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg" alt="GPL-3.0-or-later"></a>
+</p>
 
-## Quick start
+WideMelon expands the Nintendo DS 3D viewport while keeping native 2D elements
+and the touchscreen at their original proportions. It is currently an alpha
+focused on Linux and primarily tested with Pokémon Black.
 
-On Linux, install the development packages listed in `projects/melonDS/BUILD.md`
-after the build script checks out melonDS. CMake, Ninja, a C++17 compiler, Qt 6
-development packages, SDL2, libarchive, zstd, libcurl, libpcap, OpenGL/EGL,
-Wayland/X11, and extra-cmake-modules are needed.
+## Features
+
+- Native 4:3, 16:10, 16:9, 21:9, 32:9, and custom viewports
+- 1×–8× internal 3D render scale
+- Native Qt setup dialog with ROM selection and saved profiles
+- Integer scaling, fullscreen, and common output resolutions
+- Configuration and saves isolated from a stock melonDS installation
+- Existing melonDS menus, input mapping, save states, and controller support
+
+## Build and run
+
+WideMelon currently provides a source build for Linux. On Ubuntu 24.04, install
+the build dependencies with:
+
+```sh
+sudo apt update
+sudo apt install build-essential cmake ninja-build git pkg-config \
+  extra-cmake-modules libcurl4-gnutls-dev libpcap0.8-dev libsdl2-dev \
+  libarchive-dev libenet-dev libzstd-dev libfaad-dev libegl1-mesa-dev \
+  libgl1-mesa-dev libwayland-dev qt6-base-dev qt6-base-private-dev \
+  qt6-multimedia-dev libqt6svg6-dev
+```
+
+Then build and start WideMelon:
 
 ```sh
 ./scripts/build.sh
 ./widemelon
 ```
 
-The first command downloads the pinned melonDS source and the missing FAAD2 and
-ENet dependencies into ignored `projects/` and `tools/` directories. It
-applies `patches/melonds-widemelon.patch`, builds melonDS, and runs the tests.
-It does not install system packages or require a ROM.
+The build script downloads the pinned melonDS source, applies the WideMelon
+patch, builds the emulator, and runs the tests. It does not download a ROM,
+BIOS, or firmware.
 
-On startup, choose any readable Nintendo DS ROM. WideMelon does not enforce a
-game whitelist or SHA-1 checksum. Pokémon Black is the primary tested game;
-other 3D games are useful for experimentation.
+Pass a ROM on the command line to pre-fill it in the setup dialog:
 
-## Native settings
+```sh
+./widemelon /path/to/game.nds
+```
 
-The startup dialog is part of melonDS and uses ordinary native Qt controls:
+## How it works
 
-- ROM file, with drag-and-drop and basic header information
-- Native 4:3, 16:10, 16:9, Ultrawide 21:9, Superwide 32:9, or custom viewport
-- 1×–8× 3D render scale
-- Common output resolutions or a custom window size
-- Integer scaling and fullscreen
-
-Settings, saves, save states, and the last selected ROM are stored under a
-dedicated `WideMelon` directory in the platform's normal configuration location.
-They are deliberately kept separate from a stock melonDS installation so both
-applications can be used side by side without changing each other's settings.
-The existing melonDS menus remain available after the game starts, including
-input remapping, screen layouts, save states, and controller configuration.
-
-The `widemelon` script is only a small convenience wrapper around
-`build/widemelon`. A ROM can also be passed as a command-line argument; it will
-be pre-filled in the native dialog.
-
-## What the renderer changes
-
-A normal DS 3D target is 256 × 192. WideMelon allocates a wider target, such as
-448 × 192 for the 21:9 profile, and adjusts the 3D projection so the original
-center remains the same size:
+A normal DS 3D target is 256 × 192. WideMelon allocates a wider target and
+adjusts the projection so the original center keeps the same scale:
 
 ```text
 normal:    [       256 pixels       ]
-ultrawide: [ extra ][ 256 native ][ extra ]
+widescreen:[ extra ][ 256 native ][ extra ]
 ```
 
-The compositor maps the original 2D layers back onto the centered native
-region. The extra columns show only expanded 3D geometry. The touchscreen and
-native 2D artwork therefore keep their original proportions instead of being
+The extra columns contain only geometry submitted by the game. Native 2D
+layers are composited over the centered 256-pixel region instead of being
 stretched.
 
-Only geometry submitted by the game can appear in the extra columns. Game-side
-distance culling, 2D clipping, battles, videos, and special effects can still
-limit or break the result. Widescreen requires the classic OpenGL renderer;
-Native 4:3 is the compatibility profile.
+## Limitations
+
+- Widescreen requires the classic OpenGL renderer.
+- Games may apply their own distance culling or clipping.
+- Battles, videos, menus, and effects can remain 4:3 or render incorrectly.
+- Compatibility outside Pokémon Black is experimental.
+- Windows and macOS packaging is not available yet.
+
+WideMelon does not include ROMs, commercial BIOS files, firmware dumps, or game
+assets. Use only game and system files that you are legally entitled to use.
 
 ## Development
 
-The outer repository contains the launcher-free build recipe, patch, and
-renderer tests. The upstream checkout is intentionally ignored:
+The durable WideMelon changes live in
+[`patches/melonds-widemelon.patch`](patches/melonds-widemelon.patch). The
+upstream checkout under `projects/` is generated and intentionally ignored.
 
-```text
-patches/melonds-widemelon.patch   renderer and native-dialog changes
-scripts/build.sh               dependency checkout and build
-scripts/export-patch.py        export local melonDS changes
-tests/profile_test.cpp         viewport projection tests
-```
-
-For engine development, edit `projects/melonDS/src/`, then run:
+After editing `projects/melonDS/src/`, export the changes with:
 
 ```sh
 python3 scripts/export-patch.py
+./scripts/build.sh
+```
+
+Headless profiles can skip the setup dialog:
+
+```sh
+WIDEMELON_VIEW_WIDTH=448 WIDEMELON_SCALE=4 \
+  ./build/widemelon /path/to/game.nds
 ```
 
 The patch is based on melonDS commit
 `906e9ebb27da8c6a715cd7abab4abfe8a8d29427`.
 
-For automated/headless runs, setting `WIDEMELON_VIEW_WIDTH` skips the dialog and
-uses the other `WIDEMELON_*` profile variables. For example:
-
-```sh
-WIDEMELON_VIEW_WIDTH=448 WIDEMELON_SCALE=4 ./build/widemelon /path/to/game.nds
-```
-
-## Verification
-
-```sh
-ctest --test-dir build/tests --output-on-failure
-```
-
-## Distribution
-
-Source-only releases may use this repository's pinned patch workflow. Every
-compiled release must also provide the complete corresponding source used to
-build it; a patch and an upstream link are not sufficient for a binary release.
-After committing the exact release state, generate that source archive with:
+For a binary release, generate the matching complete source archive after
+committing the release state:
 
 ```sh
 ./scripts/package-source.sh 0.2.0-alpha
 ```
 
-The resulting archive is written to `dist/` and contains the patched melonDS,
-FAAD2, and ENet source trees together with the WideMelon build and licence
-files. Publish it next to the matching binary at no additional charge.
+## Licence
 
-No game ROMs, commercial BIOS files, firmware dumps, or game assets are
-distributed. WideMelon and its melonDS modifications are GPL-3.0-or-later; see
-`LICENSE` and `THIRD_PARTY.md`.
+WideMelon is a modified version of melonDS. The WideMelon modifications were
+first published in 2026 under GPL-3.0-or-later. WideMelon is independent and is
+not affiliated with or endorsed by the melonDS project, Nintendo, Game Freak,
+or The Pokémon Company.
+
+See [LICENSE](LICENSE) and [THIRD_PARTY.md](THIRD_PARTY.md) for the complete
+licence and attribution information.
