@@ -1,0 +1,21 @@
+# User dumps, saves, and captures must never be distributed.
+rom/
+saves/
+captures/
+*.nds
+*.sav
+*.dsv
+*.bin
+*.rom
+*.ml[0-9]
+# Local upstream checkouts and tools are recreated by scripts/build.sh.
+projects/
+tools/
+build/
+dist/
+# Ghidra databases and locks are local research state.
+*.gpr
+*.rep/
+*.lock
+*.lock~
+__pycache__/

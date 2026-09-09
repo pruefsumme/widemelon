@@ -1,0 +1,1039 @@
+diff --git a/src/GPU.cpp b/src/GPU.cpp
+index b695ee93..f01cf801 100644
+--- a/src/GPU.cpp
++++ b/src/GPU.cpp
+@@ -16,6 +16,7 @@
+     with melonDS. If not, see http://www.gnu.org/licenses/.
+ */
+ 
++#include "WideMelon.h"
+ #include <string.h>
+ #include "NDS.h"
+ #include "GPU.h"
+@@ -327,6 +328,11 @@ void GPU::SetRenderer(std::unique_ptr<Renderer>&& renderer) noexcept
+         }
+         else
+         {
++            if (WideMelon::Enabled()) {
++                Platform::Log(Platform::LogLevel::Error,
++                    "WideMelon: OpenGL renderer initialization failed.\n");
++                std::exit(1);
++            }
+             // TODO: report error to platform
+         }
+     }
+diff --git a/src/GPU3D.cpp b/src/GPU3D.cpp
+index 3272a349..69234177 100644
+--- a/src/GPU3D.cpp
++++ b/src/GPU3D.cpp
+@@ -16,6 +16,7 @@
+     with melonDS. If not, see http://www.gnu.org/licenses/.
+ */
+ 
++#include "WideMelon.h"
+ #include <stdio.h>
+ #include <string.h>
+ #include <algorithm>
+@@ -1348,6 +1349,8 @@ void GPU3D::SubmitVertex() noexcept
+     vertextrans->Position[2] = (vertex[0]*ClipMatrix[2] + vertex[1]*ClipMatrix[6] + vertex[2]*ClipMatrix[10] + vertex[3]*ClipMatrix[14]) >> 12;
+     vertextrans->Position[3] = (vertex[0]*ClipMatrix[3] + vertex[1]*ClipMatrix[7] + vertex[2]*ClipMatrix[11] + vertex[3]*ClipMatrix[15]) >> 12;
+ 
++    vertextrans->Position[0] = WideMelon::ProjectX(vertextrans->Position[0]);
++
+     // this probably shouldn't be.
+     // the way color is handled during clipping needs investigation. TODO
+     vertextrans->Color[0] = (VertexColor[0] << 12) + 0xFFF;
+@@ -1571,6 +1574,8 @@ void GPU3D::BoxTest(const u32* params) noexcept
+         cube[i].Position[3] = ((s64)x*ClipMatrix[3] + (s64)y*ClipMatrix[7] + (s64)z*ClipMatrix[11] + (s64)0x1000*ClipMatrix[15]) >> 12;
+     }
+ 
++    for (auto& v : cube) v.Position[0] = WideMelon::ProjectX(v.Position[0]);
++
+     // front face (-Z)
+     face[0] = cube[0]; face[1] = cube[1]; face[2] = cube[2]; face[3] = cube[3];
+     res = ClipPolygon<false>(*this, face, 4, 0);
+@@ -2918,4 +2923,3 @@ void GPU3D::Write32(u32 addr, u32 val) noexcept
+ }
+ 
+ }
+-
+diff --git a/src/GPU3D_OpenGL.cpp b/src/GPU3D_OpenGL.cpp
+index 7bd208b6..2fc1502a 100644
+--- a/src/GPU3D_OpenGL.cpp
++++ b/src/GPU3D_OpenGL.cpp
+@@ -16,6 +16,7 @@
+     with melonDS. If not, see http://www.gnu.org/licenses/.
+ */
+ 
++#include "WideMelon.h"
+ #include "GPU_OpenGL.h"
+ 
+ #include <assert.h>
+@@ -343,7 +344,7 @@ void GLRenderer3D::SetRenderSettings(int scale, bool betterpolygons) noexcept
+     ScaleFactor = scale;
+     BetterPolygons = betterpolygons;
+ 
+-    ScreenW = 256 * scale;
++    ScreenW = WideMelon::Width() * scale;
+     ScreenH = 192 * scale;
+ 
+     glBindTexture(GL_TEXTURE_2D, ColorBufferTex);
+@@ -464,6 +465,9 @@ u32* GLRenderer3D::SetupVertex(const Polygon* poly, int vid, const Vertex* vtx,
+         }
+     }*/
+ 
++    if (WideMelon::Enabled())
++        x = (static_cast<uint64_t>(vtx->HiresPosition[0]) * ScaleFactor * WideMelon::Width()) / (16 * 256);
++
+     *vptr++ = x | (y << 16);
+     *vptr++ = z | (w << 16);
+ 
+@@ -701,7 +705,7 @@ void GLRenderer3D::BuildPolygons(GLRenderer3D::RendererPolygon* polygons, int np
+                 cS *= cW;
+                 cT *= cW;
+ 
+-                cX = (cX * ScaleFactor) >> 4;
++                cX = (static_cast<uint64_t>(cX) * ScaleFactor * WideMelon::Width()) / (16 * 256);
+                 cY = (cY * ScaleFactor) >> 4;
+ 
+                 u32 w = (u32)cW;
+diff --git a/src/GPU_OpenGL.cpp b/src/GPU_OpenGL.cpp
+index 48533694..ab61f05b 100644
+--- a/src/GPU_OpenGL.cpp
++++ b/src/GPU_OpenGL.cpp
+@@ -16,6 +16,7 @@
+     with melonDS. If not, see http://www.gnu.org/licenses/.
+ */
+ 
++#include "WideMelon.h"
+ #include <string.h>
+ #include "NDS.h"
+ #include "GPU_OpenGL.h"
+@@ -348,7 +349,7 @@ void GLRenderer::SetScaleFactor(int scale)
+         return;
+ 
+     ScaleFactor = scale;
+-    ScreenW = 256 * scale;
++    ScreenW = WideMelon::Width() * scale;
+     ScreenH = 192 * scale;
+ 
+     const GLenum fbassign2[] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
+@@ -557,6 +558,18 @@ void GLRenderer::RenderScreen(int ystart, int yend)
+     {
+         glUseProgram(FPShader);
+ 
++        glUniform1f(glGetUniformLocation(FPShader, "uWideRatio"), WideMelon::Width() / 256.0f);
++        glUniform1i(glGetUniformLocation(FPShader, "uWideScene"),
++                    WideMelon::Enabled() && ((DispCntA & 0x10108) == 0x10108)
++                    && GPU.GPU2D_A.Enabled && !GPU.GPU2D_A.ForcedBlank);
++        glUniform2i(glGetUniformLocation(FPShader, "uWideBrightness"),
++                    (GPU.GPU2D_A.BlendCnt & 1) ? ((GPU.GPU2D_A.BlendCnt >> 6) & 3) : 0,
++                    std::min<int>(GPU.GPU2D_A.EVY, 16));
++        glUniform1i(glGetUniformLocation(FPShader, "WideInputTex"), 3);
++        glActiveTexture(GL_TEXTURE3);
++        glBindTexture(GL_TEXTURE_2D, OutputTex3D);
++        glActiveTexture(GL_TEXTURE0);
++
+         FinalPassConfig.uScaleFactor = ScaleFactor;
+         FinalPassConfig.uDispModeA = (DispCntA >> 16) & 0x3;
+         FinalPassConfig.uDispModeB = (DispCntB >> 16) & 0x1;
+diff --git a/src/OpenGL_shaders/2DCompositorFS.glsl b/src/OpenGL_shaders/2DCompositorFS.glsl
+index 1de6ef04..d5bcb89f 100644
+--- a/src/OpenGL_shaders/2DCompositorFS.glsl
++++ b/src/OpenGL_shaders/2DCompositorFS.glsl
+@@ -68,6 +68,11 @@ ivec3 ConvertColor(int col)
+ 
+ vec4 BG0Fetch(vec2 coord)
+ {
++    if (uEnable3D) {
++        vec2 size = vec2(textureSize(BGLayerTex[0], 0));
++        float nativeWidth = size.y * (256.0 / 192.0);
++        coord.x = (coord.x - 0.5) * nativeWidth / size.x + 0.5;
++    }
+     return texture(BGLayerTex[0], coord);
+ }
+ 
+diff --git a/src/OpenGL_shaders/CaptureFS.glsl b/src/OpenGL_shaders/CaptureFS.glsl
+index ba31f873..b584b1e1 100644
+--- a/src/OpenGL_shaders/CaptureFS.glsl
++++ b/src/OpenGL_shaders/CaptureFS.glsl
+@@ -39,7 +39,8 @@ void main()
+     {
+         int line = int(fTexcoord.z);
+         coordA.x += uSrcAOffset[line>>2][line&0x3];
+-        //coordA.x += GetSrcAPos(fTexcoord.z);
++        vec2 size = vec2(textureSize(InputTexA, 0));
++        coordA.x = (coordA.x - 0.5) * (size.y * (256.0 / 192.0)) / size.x + 0.5;
+     }
+ 
+     if (uDstMode == 0)
+diff --git a/src/OpenGL_shaders/FinalPassFS.glsl b/src/OpenGL_shaders/FinalPassFS.glsl
+index bfbb2d93..01236014 100644
+--- a/src/OpenGL_shaders/FinalPassFS.glsl
++++ b/src/OpenGL_shaders/FinalPassFS.glsl
+@@ -1,5 +1,9 @@
+ #version 140
+ 
++uniform sampler2D WideInputTex;
++uniform bool uWideScene;
++uniform float uWideRatio;
++uniform ivec2 uWideBrightness;
+ uniform sampler2D MainInputTexA;
+ uniform sampler2D MainInputTexB;
+ uniform sampler2DArray AuxInputTex;
+@@ -41,8 +45,18 @@ ivec3 MasterBrightness(ivec3 color, int brightmode, int evy)
+ 
+ void main()
+ {
+-    ivec4 col_main = ivec4(texture(MainInputTexA, fTexcoord.xy, 0) * 255.0) >> 2;
+-    ivec4 col_sub = ivec4(texture(MainInputTexB, fTexcoord.xy, 0) * 255.0) >> 2;
++    vec2 nativeCoord = vec2((fTexcoord.x - 0.5) * uWideRatio + 0.5, fTexcoord.y);
++    bool wing = nativeCoord.x < 0.0 || nativeCoord.x >= 1.0;
++    ivec4 col_main = ivec4(texture(MainInputTexA, nativeCoord, 0) * 255.0) >> 2;
++    ivec4 col_sub = ivec4(texture(MainInputTexB, nativeCoord, 0) * 255.0) >> 2;
++    if (wing) {
++        col_main = uWideScene ? ivec4(texture(WideInputTex, fTexcoord.xy) * 255.0) >> 2 : ivec4(0);
++        col_sub = ivec4(0);
++        if (uWideScene && uWideBrightness.x == 2)
++            col_main += (((63 - col_main) * uWideBrightness.y + 8) >> 4);
++        else if (uWideScene && uWideBrightness.x == 3)
++            col_main -= ((col_main * uWideBrightness.y + 7) >> 4);
++    }
+ 
+     ivec3 output_main, output_sub;
+ 
+@@ -59,7 +73,7 @@ void main()
+     else
+     {
+         // VRAM display / mainmem FIFO
+-        output_main = ivec3(texture(AuxInputTex, vec3(fTexcoord.xz, uAuxLayer)).rgb * uAuxColorFactor);
++        output_main = ivec3(texture(AuxInputTex, vec3(nativeCoord.x, fTexcoord.z, uAuxLayer)).rgb * uAuxColorFactor);
+     }
+ 
+     if (uDispModeB == 0)
+@@ -73,6 +87,9 @@ void main()
+         output_sub = col_sub.rgb;
+     }
+ 
++    if (wing && !uWideScene) output_main = ivec3(0);
++    if (wing) output_sub = ivec3(0);
++
+     if (uDispModeA != 0)
+         output_main = MasterBrightness(output_main, uBrightModeA, uBrightFactorA);
+     if (uDispModeB != 0)
+diff --git a/src/frontend/qt_sdl/CMakeLists.txt b/src/frontend/qt_sdl/CMakeLists.txt
+index 31207f86..c5d8d445 100644
+--- a/src/frontend/qt_sdl/CMakeLists.txt
++++ b/src/frontend/qt_sdl/CMakeLists.txt
+@@ -57,6 +57,8 @@ set(SOURCES_QT_SDL
+ 
+     CLI.h
+     CLI.cpp
++    WideMelonSetup.h
++    WideMelonSetup.cpp
+ 
+     LANDialog.cpp
+     NetplayDialog.cpp
+@@ -93,6 +95,7 @@ fix_interface_includes(PkgConfig::SDL2 PkgConfig::LibArchive)
+ add_compile_definitions(ARCHIVE_SUPPORT_ENABLED)
+ 
+ add_executable(melonDS ${SOURCES_QT_SDL})
++set_target_properties(melonDS PROPERTIES OUTPUT_NAME widemelon)
+ 
+ add_subdirectory("../../net"
+     ${CMAKE_BINARY_DIR}/net)
+@@ -237,7 +240,7 @@ if (APPLE)
+     set_target_properties(melonDS PROPERTIES
+         MACOSX_BUNDLE true
+         MACOSX_BUNDLE_INFO_PLIST ${CMAKE_SOURCE_DIR}/res/melon.plist.in
+-        OUTPUT_NAME melonDS
++        OUTPUT_NAME WideMelon
+         RESOURCE "${RESOURCE_FILES}")
+ 
+ 
+@@ -258,10 +261,11 @@ if (UNIX AND NOT APPLE)
+     foreach(SIZE 16 32 48 64 128 256)
+         install(FILES ${CMAKE_SOURCE_DIR}/res/icon/melon_${SIZE}x${SIZE}.png
+             DESTINATION ${CMAKE_INSTALL_PREFIX}/share/icons/hicolor/${SIZE}x${SIZE}/apps
+-            RENAME net.kuribo64.melonDS.png)
++            RENAME io.github.pruefsumme.WideMelon.png)
+     endforeach()
+ 
+-    install(FILES ${CMAKE_SOURCE_DIR}/res/net.kuribo64.melonDS.desktop DESTINATION ${CMAKE_INSTALL_PREFIX}/share/applications)
++    install(FILES io.github.pruefsumme.WideMelon.desktop DESTINATION ${CMAKE_INSTALL_PREFIX}/share/applications)
++    install(FILES io.github.pruefsumme.WideMelon.metainfo.xml DESTINATION ${CMAKE_INSTALL_PREFIX}/share/metainfo)
+     install(TARGETS melonDS BUNDLE DESTINATION ${CMAKE_BINARY_DIR} RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
+ 
+     if (NOT USE_QT6)
+diff --git a/src/frontend/qt_sdl/EmuThread.cpp b/src/frontend/qt_sdl/EmuThread.cpp
+index c3fbdfe6..2c972c2e 100755
+--- a/src/frontend/qt_sdl/EmuThread.cpp
++++ b/src/frontend/qt_sdl/EmuThread.cpp
+@@ -28,6 +28,7 @@
+ 
+ #include <SDL2/SDL.h>
+ 
++#include "WideMelon.h"
+ #include "main.h"
+ 
+ #include "types.h"
+@@ -859,6 +860,9 @@ void EmuThread::updateRenderer()
+ {
+     auto nds = emuInstance->nds;
+ 
++    if (WideMelon::Enabled())
++        videoRenderer = renderer3D_OpenGL;
++
+     if (videoRenderer != lastVideoRenderer)
+     {
+         switch (videoRenderer)
+diff --git a/src/frontend/qt_sdl/Screen.cpp b/src/frontend/qt_sdl/Screen.cpp
+index 3413496f..7fe16c26 100755
+--- a/src/frontend/qt_sdl/Screen.cpp
++++ b/src/frontend/qt_sdl/Screen.cpp
+@@ -16,6 +16,7 @@
+     with melonDS. If not, see http://www.gnu.org/licenses/.
+ */
+ 
++#include "WideMelon.h"
+ #include <string.h>
+ 
+ #include <optional>
+@@ -168,6 +169,12 @@ void ScreenPanel::setupScreenLayout()
+     if (aspectBot == 0)
+         aspectBot = ((float) w / h) / (4.f / 3.f);
+ 
++    if (WideMelon::Enabled())
++    {
++        aspectTop = WideMelon::Width() / 256.f;
++        aspectBot = 1.f;
++    }
++
+     layout.Setup(w, h,
+                 static_cast<ScreenLayoutType>(screenLayout),
+                 static_cast<ScreenRotation>(screenRotation),
+diff --git a/src/frontend/qt_sdl/VideoSettingsDialog.cpp b/src/frontend/qt_sdl/VideoSettingsDialog.cpp
+index c5feafe6..140540a6 100644
+--- a/src/frontend/qt_sdl/VideoSettingsDialog.cpp
++++ b/src/frontend/qt_sdl/VideoSettingsDialog.cpp
+@@ -20,6 +20,7 @@
+ #include <QtGlobal>
+ 
+ #include "types.h"
++#include "WideMelon.h"
+ #include "Platform.h"
+ #include "Config.h"
+ #include "GPU.h"
+@@ -78,6 +79,13 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
+ #endif
+     grp3DRenderer->button(oldRenderer)->setChecked(true);
+ 
++    if (WideMelon::Enabled())
++    {
++        ui->rb3DSoftware->setEnabled(false);
++        ui->rb3DCompute->setEnabled(false);
++        ui->rb3DOpenGL->setToolTip("The expanded WideMelon viewport requires the classic OpenGL renderer.");
++    }
++
+ #ifndef OGLRENDERER_ENABLED
+     ui->rb3DOpenGL->setEnabled(false);
+ #endif
+diff --git a/src/frontend/qt_sdl/Window.cpp b/src/frontend/qt_sdl/Window.cpp
+index 92189a56..af573d1b 100755
+--- a/src/frontend/qt_sdl/Window.cpp
++++ b/src/frontend/qt_sdl/Window.cpp
+@@ -16,6 +16,7 @@
+     with melonDS. If not, see http://www.gnu.org/licenses/.
+ */
+ 
++#include "WideMelon.h"
+ #include "NDS.h"
+ #include <stdlib.h>
+ #include <time.h>
+@@ -221,7 +222,7 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
+ 
+     showOSD = windowCfg.GetBool("ShowOSD");
+ 
+-    setWindowTitle("melonDS " MELONDS_VERSION);
++    setWindowTitle("WideMelon");
+     setAttribute(Qt::WA_DeleteOnClose);
+     setAcceptDrops(true);
+     setFocusPolicy(Qt::ClickFocus);
+@@ -662,6 +663,9 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
+     panel = nullptr;
+     createScreenPanel();
+ 
++    if (qEnvironmentVariableIsSet("WIDEMELON_VIEW_WIDTH"))
++        resize(windowCfg.GetInt("Width"), windowCfg.GetInt("Height"));
++
+     if (hasMenu)
+     {
+         actEjectCart->setEnabled(false);
+@@ -2150,7 +2154,7 @@ void MainWindow::onTitleUpdate(QString title)
+         title = prefix + title;
+     }
+ 
+-    setWindowTitle(title);
++    setWindowTitle("WideMelon — " + title);
+ }
+ 
+ void MainWindow::toggleFullscreen()
+diff --git a/src/frontend/qt_sdl/main.cpp b/src/frontend/qt_sdl/main.cpp
+index c7f9787e..8fccdf61 100644
+--- a/src/frontend/qt_sdl/main.cpp
++++ b/src/frontend/qt_sdl/main.cpp
+@@ -61,6 +61,7 @@
+ #include "Net.h"
+ 
+ #include "CLI.h"
++#include "WideMelonSetup.h"
+ 
+ #include "Net_PCap.h"
+ #include "Net_Slirp.h"
+@@ -205,9 +206,12 @@ void pathInit()
+         emuDirectory = appdirpath;
+ #else
+         QString confdir;
++        // Keep WideMelon's configuration, saves, and other user data separate from
++        // a stock melonDS installation. Both applications may be installed and
++        // used side by side without rewriting each other's settings.
+         QDir config(QStandardPaths::writableLocation(QStandardPaths::ConfigLocation));
+-        config.mkdir("melonDS");
+-        confdir = config.absolutePath() + QDir::separator() + "melonDS";
++        config.mkdir("WideMelon");
++        confdir = config.absolutePath() + QDir::separator() + "WideMelon";
+         emuDirectory = confdir;
+ #endif
+     }
+@@ -334,7 +338,7 @@ int main(int argc, char** argv)
+     // http://stackoverflow.com/questions/14543333/joystick-wont-work-using-sdl
+     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
+ 
+-    SDL_SetHint(SDL_HINT_APP_NAME, "melonDS");
++    SDL_SetHint(SDL_HINT_APP_NAME, "WideMelon");
+ 
+     if (SDL_Init(SDL_INIT_HAPTIC) < 0)
+     {
+@@ -368,6 +372,13 @@ int main(int argc, char** argv)
+                               "melonDS",
+                               "Unable to write to config.\nPlease check the write permissions of the folder you placed melonDS in.");
+ 
++    if (!WideMelon::Configure(*options))
++    {
++        delete options;
++        SDL_Quit();
++        return 0;
++    }
++
+     camStarted[0] = false;
+     camStarted[1] = false;
+     camManager[0] = new CameraManager(0, 640, 480, true);
+diff --git a/src/frontend/qt_sdl/main_shaders.h b/src/frontend/qt_sdl/main_shaders.h
+index 1602a800..71ab6cd3 100644
+--- a/src/frontend/qt_sdl/main_shaders.h
++++ b/src/frontend/qt_sdl/main_shaders.h
+@@ -55,7 +55,13 @@ out vec4 oColor;
+ 
+ void main()
+ {
+-    vec4 pixel = texture(ScreenTex, fTexcoord);
++    vec3 coord = fTexcoord;
++    // The physical touchscreen stays 4:3 and samples the center of its texture.
++    if (coord.z > 0.5) {
++        vec3 size = vec3(textureSize(ScreenTex, 0));
++        coord.x = (coord.x - 0.5) * (size.y * (256.0 / 192.0)) / size.x + 0.5;
++    }
++    vec4 pixel = texture(ScreenTex, coord);
+ 
+     oColor = vec4(pixel.rgb, 1.0);
+ }
+diff --git a/src/WideMelon.h b/src/WideMelon.h
+new file mode 100644
+index 00000000..9974bbbb
+--- /dev/null
++++ b/src/WideMelon.h
+@@ -0,0 +1,38 @@
++// WideMelon renderer profile. GPL-3.0-or-later, like the melonDS core.
++#pragma once
++
++#include <cstdint>
++#include <cstdlib>
++
++namespace WideMelon
++{
++
++// Immutable for the lifetime of a process: geometry and GL allocations must agree.
++inline int Width()
++{
++    static const int width = []
++    {
++        const char* value = std::getenv("WIDEMELON_VIEW_WIDTH");
++        if (!value)
++            return 256;
++
++        char* end = nullptr;
++        const long parsed = std::strtol(value, &end, 10);
++        if (end != value && *end == '\0' && parsed >= 256 && parsed <= 768 && parsed % 2 == 0)
++            return static_cast<int>(parsed);
++        return 256;
++    }();
++    return width;
++}
++
++inline bool Enabled()
++{
++    return Width() > 256;
++}
++
++inline int32_t ProjectX(int32_t x)
++{
++    return static_cast<int32_t>(static_cast<int64_t>(x) * 256 / Width());
++}
++
++}
+diff --git a/src/frontend/qt_sdl/WideMelonSetup.h b/src/frontend/qt_sdl/WideMelonSetup.h
+new file mode 100644
+index 00000000..c505d126
+--- /dev/null
++++ b/src/frontend/qt_sdl/WideMelonSetup.h
+@@ -0,0 +1,17 @@
++// WideMelon's small native startup dialog.
++#pragma once
++
++#include "CLI.h"
++
++namespace WideMelon
++{
++
++// Shows the WideMelon configuration dialog unless a profile was supplied through
++// the environment for automated/headless use. Returns false when the user
++// cancels startup.
++bool Configure(CLI::CommandLineOptions& options);
++
++// Applies a profile supplied through WIDEMELON_* environment variables.
++void ApplyEnvironmentProfile();
++
++}
+diff --git a/src/frontend/qt_sdl/WideMelonSetup.cpp b/src/frontend/qt_sdl/WideMelonSetup.cpp
+new file mode 100644
+index 00000000..810e87bc
+--- /dev/null
++++ b/src/frontend/qt_sdl/WideMelonSetup.cpp
+@@ -0,0 +1,473 @@
++// WideMelon's small native startup dialog.
++#include "WideMelonSetup.h"
++
++#include <algorithm>
++
++#include <QCheckBox>
++#include <QComboBox>
++#include <QDialog>
++#include <QDialogButtonBox>
++#include <QDragEnterEvent>
++#include <QDropEvent>
++#include <QFile>
++#include <QFileDialog>
++#include <QFileInfo>
++#include <QFormLayout>
++#include <QGroupBox>
++#include <QHBoxLayout>
++#include <QLabel>
++#include <QLineEdit>
++#include <QMessageBox>
++#include <QMimeData>
++#include <QPushButton>
++#include <QSpinBox>
++#include <QVBoxLayout>
++
++#include "EmuInstance.h"
++#include "WideMelon.h"
++#include "ScreenLayout.h"
++
++namespace
++{
++
++constexpr int kDefaultViewWidth = 342;
++constexpr int kDefaultScale = 4;
++constexpr int kDefaultWindowWidth = 1600;
++constexpr int kDefaultWindowHeight = 900;
++
++bool validViewWidth(int width)
++{
++    return width >= 256 && width <= 768 && (width % 2) == 0;
++}
++
++int envInt(const char* name, int fallback)
++{
++    bool ok = false;
++    const int value = qEnvironmentVariable(name).toInt(&ok);
++    return ok ? value : fallback;
++}
++
++int fixedResolutionWidth(int index)
++{
++    switch (index)
++    {
++    case 0: return 1280;
++    case 1: return 1600;
++    case 2: return 1920;
++    case 3: return 2560;
++    case 4: return 3440;
++    case 5: return 3840;
++    default: return kDefaultWindowWidth;
++    }
++}
++
++int fixedResolutionHeight(int index)
++{
++    switch (index)
++    {
++    case 0: return 720;
++    case 1: return 900;
++    case 2: return 1080;
++    case 3: return 1440;
++    case 4: return 1440;
++    case 5: return 2160;
++    default: return kDefaultWindowHeight;
++    }
++}
++
++void setDefaultKey(Config::Table& keys, const char* name, int key)
++{
++    if (keys.GetInt(name) == -1)
++        keys.SetInt(name, key);
++}
++
++void applyProfile(int viewWidth, int scale, int windowWidth, int windowHeight,
++                  bool integerScaling, bool fullscreen, const QString& romPath)
++{
++    viewWidth = validViewWidth(viewWidth) ? viewWidth : kDefaultViewWidth;
++    scale = std::clamp(scale, 1, 8);
++    windowWidth = std::clamp(windowWidth, 640, 7680);
++    windowHeight = std::clamp(windowHeight, 480, 4320);
++
++    qputenv("WIDEMELON_VIEW_WIDTH", QByteArray::number(viewWidth));
++    qputenv("WIDEMELON_SCALE", QByteArray::number(scale));
++    qputenv("WIDEMELON_WINDOW_WIDTH", QByteArray::number(windowWidth));
++    qputenv("WIDEMELON_WINDOW_HEIGHT", QByteArray::number(windowHeight));
++    qputenv("WIDEMELON_INTEGER", integerScaling ? "1" : "0");
++
++    auto global = Config::GetGlobalTable();
++    global.SetInt("3D.Renderer", renderer3D_OpenGL);
++    global.SetInt("3D.GL.ScaleFactor", scale);
++    global.SetBool("Screen.Filter", false);
++    global.SetBool("Emu.DirectBoot", true);
++    global.SetInt("Emu.ConsoleType", 0);
++    global.SetBool("Emu.ExternalBIOSEnable", false);
++    global.SetInt("WideMelon.ViewWidth", viewWidth);
++    global.SetInt("WideMelon.Scale", scale);
++    global.SetInt("WideMelon.WindowWidth", windowWidth);
++    global.SetInt("WideMelon.WindowHeight", windowHeight);
++    global.SetBool("WideMelon.IntegerScaling", integerScaling);
++    global.SetBool("WideMelon.Fullscreen", fullscreen);
++    if (!romPath.isEmpty())
++        global.SetString("WideMelon.LastROM", romPath.toStdString());
++
++    auto local = Config::GetLocalTable(0);
++    auto window = local.GetTable("Window0");
++    window.SetBool("ScreenFilter", false);
++    window.SetInt("Width", windowWidth);
++    window.SetInt("Height", windowHeight);
++    window.SetInt("ScreenLayout", screenLayout_Horizontal);
++    window.SetInt("ScreenSizing", screenSizing_EmphTop);
++    window.SetInt("ScreenAspectTop", 0);
++    window.SetInt("ScreenAspectBot", 0);
++    window.SetBool("IntegerScaling", integerScaling);
++
++    auto keys = local.GetTable("Keyboard");
++    setDefaultKey(keys, "A", Qt::Key_X);
++    setDefaultKey(keys, "B", Qt::Key_Z);
++    setDefaultKey(keys, "X", Qt::Key_S);
++    setDefaultKey(keys, "Y", Qt::Key_A);
++    setDefaultKey(keys, "L", Qt::Key_Q);
++    setDefaultKey(keys, "R", Qt::Key_W);
++    setDefaultKey(keys, "Up", Qt::Key_Up);
++    setDefaultKey(keys, "Down", Qt::Key_Down);
++    setDefaultKey(keys, "Left", Qt::Key_Left);
++    setDefaultKey(keys, "Right", Qt::Key_Right);
++    setDefaultKey(keys, "Start", Qt::Key_Return);
++    setDefaultKey(keys, "Select", Qt::Key_Backspace);
++    setDefaultKey(keys, "HK_FullscreenToggle", Qt::Key_F11);
++    setDefaultKey(keys, "HK_Pause", Qt::Key_P);
++    setDefaultKey(keys, "HK_FastForward", Qt::Key_Tab);
++}
++
++class SetupDialog final : public QDialog
++{
++public:
++    explicit SetupDialog(const CLI::CommandLineOptions& options, QWidget* parent = nullptr)
++        : QDialog(parent)
++    {
++        setWindowTitle("WideMelon settings");
++        setModal(true);
++        setMinimumWidth(540);
++        setAcceptDrops(true);
++
++        auto root = new QVBoxLayout(this);
++        root->setContentsMargins(18, 18, 18, 18);
++        root->setSpacing(12);
++
++        auto heading = new QLabel("WideMelon");
++        QFont headingFont = heading->font();
++        headingFont.setPointSize(16);
++        headingFont.setBold(true);
++        heading->setFont(headingFont);
++        root->addWidget(heading);
++
++        auto explanation = new QLabel(
++            "Choose a Nintendo DS ROM and configure the expanded 3D view. "
++            "Any readable ROM can be launched; Pokémon Black is the primary tested game.");
++        explanation->setWordWrap(true);
++        root->addWidget(explanation);
++
++        auto gameBox = new QGroupBox("Game");
++        auto gameLayout = new QVBoxLayout(gameBox);
++        auto romRow = new QHBoxLayout;
++        romPath = new QLineEdit;
++        romPath->setPlaceholderText("Path to a .nds file");
++        romPath->setClearButtonEnabled(true);
++        auto browse = new QPushButton("Browse…");
++        romRow->addWidget(romPath, 1);
++        romRow->addWidget(browse);
++        gameLayout->addLayout(romRow);
++        romInfo = new QLabel;
++        romInfo->setWordWrap(true);
++        gameLayout->addWidget(romInfo);
++        root->addWidget(gameBox);
++
++        auto videoBox = new QGroupBox("Video");
++        auto videoLayout = new QFormLayout(videoBox);
++        videoLayout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
++
++        viewport = new QComboBox;
++        viewport->addItem("Native 4:3", 256);
++        viewport->addItem("16:10", 308);
++        viewport->addItem("16:9", 342);
++        viewport->addItem("Ultrawide 21:9", 448);
++        viewport->addItem("Superwide 32:9", 682);
++        viewport->addItem("Custom", 0);
++        videoLayout->addRow("World viewport", viewport);
++
++        customWidth = new QSpinBox;
++        customWidth->setRange(256, 768);
++        customWidth->setSingleStep(2);
++        customWidth->setSuffix(" × 192");
++        videoLayout->addRow("Custom viewport", customWidth);
++
++        resolution = new QComboBox;
++        resolution->addItems({
++            "1280 × 720", "1600 × 900", "1920 × 1080", "2560 × 1440",
++            "3440 × 1440", "3840 × 2160", "Custom window"
++        });
++        videoLayout->addRow("Window resolution", resolution);
++
++        auto dimensions = new QHBoxLayout;
++        windowWidth = new QSpinBox;
++        windowWidth->setRange(640, 7680);
++        windowHeight = new QSpinBox;
++        windowHeight->setRange(480, 4320);
++        dimensions->addWidget(windowWidth);
++        dimensions->addWidget(new QLabel("×"));
++        dimensions->addWidget(windowHeight);
++        dimensions->addStretch();
++        videoLayout->addRow("Custom window", dimensions);
++
++        scale = new QComboBox;
++        for (int i = 1; i <= 8; i++)
++            scale->addItem(QString::number(i) + "×", i);
++        videoLayout->addRow("3D render scale", scale);
++
++        integerScaling = new QCheckBox("Integer scaling");
++        videoLayout->addRow("Presentation", integerScaling);
++
++        summary = new QLabel;
++        summary->setWordWrap(true);
++        videoLayout->addRow(QString(), summary);
++        root->addWidget(videoBox);
++
++        fullscreen = new QCheckBox("Start fullscreen");
++        root->addWidget(fullscreen);
++
++        auto note = new QLabel(
++            "WideMelon widens submitted 3D geometry. Menus, sprites, videos, and the "
++            "touchscreen keep their native proportions. Some games may need their "
++            "own compatibility tuning.");
++        note->setWordWrap(true);
++        root->addWidget(note);
++
++        auto buttons = new QDialogButtonBox(QDialogButtonBox::Cancel, Qt::Horizontal, this);
++        start = buttons->addButton("Start melonDS", QDialogButtonBox::AcceptRole);
++        root->addWidget(buttons);
++
++        auto global = Config::GetGlobalTable();
++        const int savedWidth = global.GetInt("WideMelon.ViewWidth");
++        const int viewWidth = validViewWidth(savedWidth) ? savedWidth : kDefaultViewWidth;
++        const int savedScale = global.GetInt("WideMelon.Scale");
++        const int savedResolution = global.GetInt("WideMelon.Resolution");
++        const int savedWindowWidth = global.GetInt("WideMelon.WindowWidth");
++        const int savedWindowHeight = global.GetInt("WideMelon.WindowHeight");
++
++        int viewportIndex = viewport->findData(viewWidth);
++        if (viewportIndex < 0)
++            viewportIndex = viewport->count() - 1;
++        viewport->setCurrentIndex(viewportIndex);
++        customWidth->setValue(viewWidth);
++        scale->setCurrentIndex(qBound(0, (savedScale > 0 ? savedScale : kDefaultScale) - 1, 7));
++        resolution->setCurrentIndex(qBound(0, savedResolution, 6));
++        windowWidth->setValue(std::clamp(savedWindowWidth > 0 ? savedWindowWidth : kDefaultWindowWidth, 640, 7680));
++        windowHeight->setValue(std::clamp(savedWindowHeight > 0 ? savedWindowHeight : kDefaultWindowHeight, 480, 4320));
++        integerScaling->setChecked(global.GetBool("WideMelon.IntegerScaling"));
++        fullscreen->setChecked(options.fullscreen || global.GetBool("WideMelon.Fullscreen"));
++
++        QString initialRom;
++        if (options.dsRomPath.has_value())
++            initialRom = *options.dsRomPath;
++        if (initialRom.isEmpty())
++            initialRom = global.GetQString("WideMelon.LastROM");
++        romPath->setText(initialRom);
++
++        connect(browse, &QPushButton::clicked, this, [this]
++        {
++            const QString selected = QFileDialog::getOpenFileName(
++                this, "Choose Nintendo DS ROM", romPath->text(),
++                "Nintendo DS ROMs (*.nds *.nds.zst);;All files (*)");
++            if (!selected.isEmpty())
++                romPath->setText(selected);
++        });
++        connect(romPath, &QLineEdit::textChanged, this, [this] { updateRomInfo(); });
++        connect(viewport, qOverload<int>(&QComboBox::currentIndexChanged), this,
++                [this] { updateViewportControls(); });
++        connect(resolution, qOverload<int>(&QComboBox::currentIndexChanged), this,
++                [this] { updateResolutionControls(); });
++        connect(customWidth, qOverload<int>(&QSpinBox::valueChanged), this,
++                [this](int value)
++        {
++            if (value % 2 != 0)
++                customWidth->setValue(value - 1);
++            updateSummary();
++        });
++        connect(scale, qOverload<int>(&QComboBox::currentIndexChanged), this,
++                [this] { updateSummary(); });
++        connect(windowWidth, qOverload<int>(&QSpinBox::valueChanged), this,
++                [this] { updateSummary(); });
++        connect(windowHeight, qOverload<int>(&QSpinBox::valueChanged), this,
++                [this] { updateSummary(); });
++        connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
++        connect(start, &QPushButton::clicked, this, [this] { startGame(); });
++
++        updateViewportControls();
++        updateResolutionControls();
++        updateRomInfo();
++    }
++
++    void apply(CLI::CommandLineOptions& options)
++    {
++        const QString path = QFileInfo(romPath->text().trimmed()).absoluteFilePath();
++        const int viewWidth = viewport->currentData().toInt() == 0
++            ? customWidth->value() : viewport->currentData().toInt();
++        const int resolutionIndex = resolution->currentIndex();
++        const int outputWidth = resolutionIndex < 6 ? fixedResolutionWidth(resolutionIndex) : windowWidth->value();
++        const int outputHeight = resolutionIndex < 6 ? fixedResolutionHeight(resolutionIndex) : windowHeight->value();
++
++        applyProfile(viewWidth, scale->currentData().toInt(), outputWidth, outputHeight,
++                     integerScaling->isChecked(), fullscreen->isChecked(), path);
++        Config::GetGlobalTable().SetInt("WideMelon.Resolution", resolutionIndex);
++        options.dsRomPath = path;
++        options.dsRomArchivePath.reset();
++        options.boot = true;
++        options.fullscreen = fullscreen->isChecked();
++    }
++
++protected:
++    void dragEnterEvent(QDragEnterEvent* event) override
++    {
++        if (event->mimeData()->hasUrls())
++            event->acceptProposedAction();
++    }
++
++    void dropEvent(QDropEvent* event) override
++    {
++        const auto urls = event->mimeData()->urls();
++        if (!urls.isEmpty() && urls.first().isLocalFile())
++        {
++            romPath->setText(urls.first().toLocalFile());
++            event->acceptProposedAction();
++        }
++    }
++
++private:
++    void updateViewportControls()
++    {
++        const bool custom = viewport->currentData().toInt() == 0;
++        customWidth->setEnabled(custom);
++        if (!custom)
++            customWidth->setValue(viewport->currentData().toInt());
++        updateSummary();
++    }
++
++    void updateResolutionControls()
++    {
++        const bool custom = resolution->currentIndex() >= 6;
++        windowWidth->setEnabled(custom);
++        windowHeight->setEnabled(custom);
++        if (!custom)
++        {
++            windowWidth->setValue(fixedResolutionWidth(resolution->currentIndex()));
++            windowHeight->setValue(fixedResolutionHeight(resolution->currentIndex()));
++        }
++        updateSummary();
++    }
++
++    void updateSummary()
++    {
++        const int viewWidth = viewport->currentData().toInt() == 0
++            ? customWidth->value() : viewport->currentData().toInt();
++        const int renderScale = scale->currentData().toInt();
++        const int extraPercent = qRound((viewWidth / 256.0 - 1.0) * 100.0);
++        const int resolutionIndex = resolution->currentIndex();
++        const int outputWidth = resolutionIndex < 6 ? fixedResolutionWidth(resolutionIndex) : windowWidth->value();
++        const int outputHeight = resolutionIndex < 6 ? fixedResolutionHeight(resolutionIndex) : windowHeight->value();
++        summary->setText(QString("%1 × 192 world view · %2 × %3 3D framebuffer · +%4% horizontal view · %5 × %6 output")
++                         .arg(viewWidth).arg(viewWidth * renderScale).arg(192 * renderScale)
++                         .arg(extraPercent).arg(outputWidth).arg(outputHeight));
++    }
++
++    void updateRomInfo()
++    {
++        const QString path = romPath->text().trimmed();
++        const QFileInfo fileInfo(path);
++        const bool readable = !path.isEmpty() && fileInfo.isFile() && fileInfo.isReadable();
++        start->setEnabled(readable);
++        if (!readable)
++        {
++            romInfo->setText("Choose a readable Nintendo DS ROM.");
++            return;
++        }
++
++        QFile file(path);
++        QByteArray header;
++        if (file.open(QIODevice::ReadOnly))
++            header = file.read(0x20);
++
++        if (header.size() >= 0x20)
++        {
++            QString title = QString::fromLatin1(header.constData(), 12).remove(QChar('\0')).trimmed();
++            QString code = QString::fromLatin1(header.constData() + 12, 4).trimmed();
++            const int revision = static_cast<unsigned char>(header.at(0x1e));
++            romInfo->setText(QString("%1  ·  code %2  ·  revision %3")
++                             .arg(title.isEmpty() ? "Nintendo DS ROM" : title)
++                             .arg(code.isEmpty() ? "—" : code)
++                             .arg(revision));
++        }
++        else
++        {
++            romInfo->setText("Nintendo DS ROM selected. melonDS will validate it when starting.");
++        }
++    }
++
++    void startGame()
++    {
++        const QFileInfo fileInfo(romPath->text().trimmed());
++        if (!fileInfo.isFile() || !fileInfo.isReadable())
++        {
++            QMessageBox::warning(this, "ROM not readable", "Choose a readable Nintendo DS ROM file.");
++            return;
++        }
++
++        accept();
++    }
++
++    QLineEdit* romPath;
++    QLabel* romInfo;
++    QLabel* summary;
++    QComboBox* viewport;
++    QSpinBox* customWidth;
++    QComboBox* resolution;
++    QSpinBox* windowWidth;
++    QSpinBox* windowHeight;
++    QComboBox* scale;
++    QCheckBox* integerScaling;
++    QCheckBox* fullscreen;
++    QPushButton* start;
++};
++
++}
++
++namespace WideMelon
++{
++
++void ApplyEnvironmentProfile()
++{
++    const int viewWidth = WideMelon::Width();
++    const int scale = envInt("WIDEMELON_SCALE", kDefaultScale);
++    const int windowWidth = envInt("WIDEMELON_WINDOW_WIDTH", kDefaultWindowWidth);
++    const int windowHeight = envInt("WIDEMELON_WINDOW_HEIGHT", kDefaultWindowHeight);
++    const bool integerScaling = envInt("WIDEMELON_INTEGER", 0) != 0;
++    applyProfile(viewWidth, scale, windowWidth, windowHeight, integerScaling, false, {});
++}
++
++bool Configure(CLI::CommandLineOptions& options)
++{
++    if (qEnvironmentVariableIsSet("WIDEMELON_VIEW_WIDTH"))
++    {
++        ApplyEnvironmentProfile();
++        return true;
++    }
++
++    SetupDialog dialog(options);
++    if (dialog.exec() != QDialog::Accepted)
++        return false;
++
++    dialog.apply(options);
++    return true;
++}
++
++}
+diff --git a/src/frontend/qt_sdl/io.github.pruefsumme.WideMelon.desktop b/src/frontend/qt_sdl/io.github.pruefsumme.WideMelon.desktop
+new file mode 100644
+index 00000000..15ac5159
+--- /dev/null
++++ b/src/frontend/qt_sdl/io.github.pruefsumme.WideMelon.desktop
+@@ -0,0 +1,11 @@
++[Desktop Entry]
++Name=WideMelon
++GenericName=Nintendo DS Emulator
++Comment=Experimental widescreen Nintendo DS emulator based on melonDS
++Exec=widemelon %f
++Type=Application
++Categories=Game;Emulator;
++Terminal=false
++Icon=io.github.pruefsumme.WideMelon
++MimeType=application/x-nintendo-ds-rom;
++Keywords=emulator;Nintendo;DS;NDS;Nintendo DS;widescreen;
+diff --git a/src/frontend/qt_sdl/io.github.pruefsumme.WideMelon.metainfo.xml b/src/frontend/qt_sdl/io.github.pruefsumme.WideMelon.metainfo.xml
+new file mode 100644
+index 00000000..1323c3f4
+--- /dev/null
++++ b/src/frontend/qt_sdl/io.github.pruefsumme.WideMelon.metainfo.xml
+@@ -0,0 +1,21 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<component type="desktop-application">
++  <id>io.github.pruefsumme.WideMelon</id>
++  <name>WideMelon</name>
++  <summary>Experimental widescreen Nintendo DS emulator</summary>
++  <metadata_license>CC0-1.0</metadata_license>
++  <project_license>GPL-3.0-or-later</project_license>
++  <developer id="io.github.pruefsumme">
++    <name>WideMelon contributors</name>
++  </developer>
++  <launchable type="desktop-id">io.github.pruefsumme.WideMelon.desktop</launchable>
++  <content_rating type="oars-1.1"/>
++  <description>
++    <p>WideMelon is an experimental widescreen build based on melonDS. It expands submitted 3D scenes while preserving native 2D proportions.</p>
++  </description>
++  <url type="homepage">https://github.com/pruefsumme/pokemon-widescreen</url>
++  <url type="vcs-browser">https://github.com/pruefsumme/pokemon-widescreen</url>
++  <provides>
++    <binary>widemelon</binary>
++  </provides>
++</component>

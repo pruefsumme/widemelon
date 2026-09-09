@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+if [[ ! -x "$root/build/widemelon" ]]; then
+    printf 'Build WideMelon first: ./scripts/build.sh\n' >&2
+    exit 1
+fi
+exec "$root/build/widemelon" "$@"
