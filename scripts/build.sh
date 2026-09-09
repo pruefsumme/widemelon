@@ -7,6 +7,10 @@ prefix="$root/tools/local"
 melon_commit=906e9ebb27da8c6a715cd7abab4abfe8a8d29427
 faad_commit=673a22a3c7c33e96e2ff7aae7c4d2bc190dfbf92
 enet_commit=2662c0de09e36f2a2030ccc2c528a3e4c9e8138a
+cmake_options=(-DENABLE_LTO_RELEASE=OFF)
+if [[ ${WIDEMELON_USE_QT6:-1} == 0 ]]; then
+    cmake_options+=(-DUSE_QT6=OFF)
+fi
 export PKG_CONFIG_PATH="$prefix/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
 mkdir -p tools projects
 if ! pkg-config --exists faad2; then
@@ -61,7 +65,7 @@ elif [[ ! -f projects/melonDS/.widemelon-patched-source ]]; then
     printf 'projects/melonDS is neither a Git checkout nor a WideMelon source bundle.\n' >&2
     exit 1
 fi
-cmake -S projects/melonDS -B build -G Ninja -DENABLE_LTO_RELEASE=OFF
+cmake -S projects/melonDS -B build -G Ninja "${cmake_options[@]}"
 cmake --build build -j "$jobs"
 cmake -S . -B build/tests -G Ninja
 cmake --build build/tests -j "$jobs"

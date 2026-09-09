@@ -36,10 +36,12 @@ jobs:
             extra-cmake-modules libcurl4-gnutls-dev libpcap0.8-dev \
             libsdl2-dev libarchive-dev libenet-dev libzstd-dev libfaad-dev \
             libegl1-mesa-dev libgl1-mesa-dev libwayland-dev libfuse2 \
-            qtbase6-dev qtbase6-private-dev qtmultimedia6-dev \
-            libqt6svg6-dev qt6-wayland
+            qtbase5-dev qtbase5-private-dev qtmultimedia5-dev \
+            libqt5svg5-dev qtwayland5
 
       - name: Build and test
+        env:
+          WIDEMELON_USE_QT6: "0"
         run: ./scripts/build.sh
 
       - name: Generate complete source archive
@@ -51,7 +53,7 @@ jobs:
       - name: Stage application
         run: |
           cmake -S projects/melonDS -B build -G Ninja \
-            -DCMAKE_INSTALL_PREFIX=/usr -DENABLE_LTO_RELEASE=OFF
+            -DCMAKE_INSTALL_PREFIX=/usr -DENABLE_LTO_RELEASE=OFF -DUSE_QT6=OFF
           DESTDIR="$GITHUB_WORKSPACE/build/AppDir" cmake --install build
           for size in 16 32 48 64 128 256; do
             install -Dm644 "assets/icons/widemelon-$size.png" \
@@ -64,7 +66,7 @@ jobs:
           ARCH: x86_64
           EXTRA_PLATFORM_PLUGINS: "libqwayland-egl.so;libqwayland-generic.so"
           EXTRA_QT_MODULES: "waylandcompositor"
-          QMAKE: /usr/lib/qt6/bin/qmake
+          QMAKE: /usr/lib/qt5/bin/qmake
         run: |
           mkdir -p build/appimage-tools
           wget --quiet -P build/appimage-tools \
