@@ -1012,7 +1012,7 @@ index 00000000..15ac5159
 +Keywords=emulator;Nintendo;DS;NDS;Nintendo DS;widescreen;
 diff --git a/src/frontend/qt_sdl/io.github.pruefsumme.WideMelon.metainfo.xml b/src/frontend/qt_sdl/io.github.pruefsumme.WideMelon.metainfo.xml
 new file mode 100644
-index 00000000..1323c3f4
+index 00000000..ebcfbb12
 --- /dev/null
 +++ b/src/frontend/qt_sdl/io.github.pruefsumme.WideMelon.metainfo.xml
 @@ -0,0 +1,21 @@
@@ -1031,8 +1031,8 @@ index 00000000..1323c3f4
 +  <description>
 +    <p>WideMelon is an experimental widescreen build based on melonDS. It expands submitted 3D scenes while preserving native 2D proportions.</p>
 +  </description>
-+  <url type="homepage">https://github.com/pruefsumme/pokemon-widescreen</url>
-+  <url type="vcs-browser">https://github.com/pruefsumme/pokemon-widescreen</url>
++  <url type="homepage">https://github.com/pruefsumme/widemelon</url>
++  <url type="vcs-browser">https://github.com/pruefsumme/widemelon</url>
 +  <provides>
 +    <binary>widemelon</binary>
 +  </provides>
