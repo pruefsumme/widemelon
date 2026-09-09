@@ -119,7 +119,7 @@ build it; a patch and an upstream link are not sufficient for a binary release.
 After committing the exact release state, generate that source archive with:
 
 ```sh
-./scripts/package-source.sh 0.1.0-alpha
+./scripts/package-source.sh 0.2.0-alpha
 ```
 
 The resulting archive is written to `dist/` and contains the patched melonDS,
