@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Linux
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends \
+            build-essential cmake ninja-build git pkg-config \
+            extra-cmake-modules libcurl4-gnutls-dev libpcap0.8-dev \
+            libsdl2-dev libarchive-dev libenet-dev libzstd-dev libfaad-dev \
+            libegl1-mesa-dev libgl1-mesa-dev libwayland-dev \
+            qt6-base-dev qt6-base-private-dev qt6-multimedia-dev libqt6svg6-dev
+
+      - name: Build and test
+        run: ./scripts/build.sh
