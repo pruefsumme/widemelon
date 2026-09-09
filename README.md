@@ -57,6 +57,13 @@ Pass a ROM on the command line to pre-fill it in the setup dialog:
 ./widemelon /path/to/game.nds
 ```
 
+## Downloads
+
+Development AppImages are available from the
+[Package Linux workflow](https://github.com/pruefsumme/widemelon/actions/workflows/package-linux.yml).
+Tagged builds publish the AppImage and its matching complete source archive on
+the [Releases page](https://github.com/pruefsumme/widemelon/releases).
+
 ## How it works
 
 A normal DS 3D target is 256 × 192. WideMelon allocates a wider target and
