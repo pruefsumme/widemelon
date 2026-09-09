@@ -339,18 +339,19 @@ index c5feafe6..140540a6 100644
      ui->rb3DOpenGL->setEnabled(false);
  #endif
 diff --git a/src/frontend/qt_sdl/Window.cpp b/src/frontend/qt_sdl/Window.cpp
-index 92189a56..af573d1b 100755
+index 92189a56..429df14e 100755
 --- a/src/frontend/qt_sdl/Window.cpp
 +++ b/src/frontend/qt_sdl/Window.cpp
-@@ -16,6 +16,7 @@
+@@ -16,6 +16,8 @@
      with melonDS. If not, see http://www.gnu.org/licenses/.
  */
  
 +#include "WideMelon.h"
++#include "WideMelonSetup.h"
  #include "NDS.h"
  #include <stdlib.h>
  #include <time.h>
-@@ -221,7 +222,7 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
+@@ -221,7 +223,7 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
  
      showOSD = windowCfg.GetBool("ShowOSD");
  
@@ -359,7 +360,17 @@ index 92189a56..af573d1b 100755
      setAttribute(Qt::WA_DeleteOnClose);
      setAcceptDrops(true);
      setFocusPolicy(Qt::ClickFocus);
-@@ -662,6 +663,9 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
+@@ -590,6 +592,9 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
+             actInputConfig = menu->addAction("Input and hotkeys");
+             connect(actInputConfig, &QAction::triggered, this, &MainWindow::onOpenInputConfig);
+ 
++            actWideMelonSettings = menu->addAction("WideMelon settings...");
++            connect(actWideMelonSettings, &QAction::triggered, this, &MainWindow::onOpenWideMelonSettings);
++
+             actVideoSettings = menu->addAction("Video settings");
+             connect(actVideoSettings, &QAction::triggered, this, &MainWindow::onOpenVideoSettings);
+ 
+@@ -662,6 +667,9 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
      panel = nullptr;
      createScreenPanel();
  
@@ -369,7 +380,27 @@ index 92189a56..af573d1b 100755
      if (hasMenu)
      {
          actEjectCart->setEnabled(false);
-@@ -2150,7 +2154,7 @@ void MainWindow::onTitleUpdate(QString title)
+@@ -736,6 +744,7 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
+         if (emuInstance->instanceID > 0)
+         {
+             actEmuSettings->setEnabled(false);
++            actWideMelonSettings->setEnabled(false);
+             actVideoSettings->setEnabled(false);
+             actMPSettings->setEnabled(false);
+             actWifiSettings->setEnabled(false);
+@@ -1859,6 +1868,11 @@ void MainWindow::onOpenVideoSettings()
+     connect(dlg, &VideoSettingsDialog::updateVideoSettings, this, &MainWindow::onUpdateVideoSettings);
+ }
+ 
++void MainWindow::onOpenWideMelonSettings()
++{
++    WideMelon::OpenSettings(this);
++}
++
+ void MainWindow::onOpenCameraSettings()
+ {
+     emuThread->emuPause();
+@@ -2150,7 +2164,7 @@ void MainWindow::onTitleUpdate(QString title)
          title = prefix + title;
      }
  
@@ -378,6 +409,26 @@ index 92189a56..af573d1b 100755
  }
  
  void MainWindow::toggleFullscreen()
+diff --git a/src/frontend/qt_sdl/Window.h b/src/frontend/qt_sdl/Window.h
+index 8b763407..e95c2231 100755
+--- a/src/frontend/qt_sdl/Window.h
++++ b/src/frontend/qt_sdl/Window.h
+@@ -141,6 +141,7 @@ private slots:
+     void onEmuSettingsDialogFinished(int res);
+     void onOpenInputConfig();
+     void onInputConfigFinished(int res);
++    void onOpenWideMelonSettings();
+     void onOpenVideoSettings();
+     void onOpenCameraSettings();
+     void onCameraSettingsFinished(int res);
+@@ -266,6 +267,7 @@ public:
+     QAction* actPreferences;
+ #endif
+     QAction* actInputConfig;
++    QAction* actWideMelonSettings;
+     QAction* actVideoSettings;
+     QAction* actCameraSettings;
+     QAction* actAudioSettings;
 diff --git a/src/frontend/qt_sdl/main.cpp b/src/frontend/qt_sdl/main.cpp
 index c7f9787e..8fccdf61 100644
 --- a/src/frontend/qt_sdl/main.cpp
@@ -493,14 +544,16 @@ index 00000000..9974bbbb
 +}
 diff --git a/src/frontend/qt_sdl/WideMelonSetup.h b/src/frontend/qt_sdl/WideMelonSetup.h
 new file mode 100644
-index 00000000..c505d126
+index 00000000..e46359eb
 --- /dev/null
 +++ b/src/frontend/qt_sdl/WideMelonSetup.h
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,23 @@
 +// WideMelon's small native startup dialog.
 +#pragma once
 +
 +#include "CLI.h"
++
++class QWidget;
 +
 +namespace WideMelon
 +{
@@ -510,16 +563,20 @@ index 00000000..c505d126
 +// cancels startup.
 +bool Configure(CLI::CommandLineOptions& options);
 +
++// Opens the saved WideMelon profile from the regular melonDS window. Renderer
++// dimensions are process-wide, so changes take effect on the next launch.
++void OpenSettings(QWidget* parent);
++
 +// Applies a profile supplied through WIDEMELON_* environment variables.
 +void ApplyEnvironmentProfile();
 +
 +}
 diff --git a/src/frontend/qt_sdl/WideMelonSetup.cpp b/src/frontend/qt_sdl/WideMelonSetup.cpp
 new file mode 100644
-index 00000000..810e87bc
+index 00000000..506ba749
 --- /dev/null
 +++ b/src/frontend/qt_sdl/WideMelonSetup.cpp
-@@ -0,0 +1,473 @@
+@@ -0,0 +1,387 @@
 +// WideMelon's small native startup dialog.
 +#include "WideMelonSetup.h"
 +
@@ -529,18 +586,11 @@ index 00000000..810e87bc
 +#include <QComboBox>
 +#include <QDialog>
 +#include <QDialogButtonBox>
-+#include <QDragEnterEvent>
-+#include <QDropEvent>
-+#include <QFile>
-+#include <QFileDialog>
-+#include <QFileInfo>
 +#include <QFormLayout>
 +#include <QGroupBox>
 +#include <QHBoxLayout>
 +#include <QLabel>
-+#include <QLineEdit>
 +#include <QMessageBox>
-+#include <QMimeData>
 +#include <QPushButton>
 +#include <QSpinBox>
 +#include <QVBoxLayout>
@@ -604,7 +654,7 @@ index 00000000..810e87bc
 +}
 +
 +void applyProfile(int viewWidth, int scale, int windowWidth, int windowHeight,
-+                  bool integerScaling, bool fullscreen, const QString& romPath)
++                  bool integerScaling, bool fullscreen)
 +{
 +    viewWidth = validViewWidth(viewWidth) ? viewWidth : kDefaultViewWidth;
 +    scale = std::clamp(scale, 1, 8);
@@ -630,8 +680,6 @@ index 00000000..810e87bc
 +    global.SetInt("WideMelon.WindowHeight", windowHeight);
 +    global.SetBool("WideMelon.IntegerScaling", integerScaling);
 +    global.SetBool("WideMelon.Fullscreen", fullscreen);
-+    if (!romPath.isEmpty())
-+        global.SetString("WideMelon.LastROM", romPath.toStdString());
 +
 +    auto local = Config::GetLocalTable(0);
 +    auto window = local.GetTable("Window0");
@@ -665,45 +713,16 @@ index 00000000..810e87bc
 +class SetupDialog final : public QDialog
 +{
 +public:
-+    explicit SetupDialog(const CLI::CommandLineOptions& options, QWidget* parent = nullptr)
-+        : QDialog(parent)
++    explicit SetupDialog(bool startFullscreen, bool startup, QWidget* parent = nullptr)
++        : QDialog(parent), startup(startup)
 +    {
 +        setWindowTitle("WideMelon settings");
 +        setModal(true);
-+        setMinimumWidth(540);
-+        setAcceptDrops(true);
++        setMinimumWidth(500);
 +
 +        auto root = new QVBoxLayout(this);
 +        root->setContentsMargins(18, 18, 18, 18);
 +        root->setSpacing(12);
-+
-+        auto heading = new QLabel("WideMelon");
-+        QFont headingFont = heading->font();
-+        headingFont.setPointSize(16);
-+        headingFont.setBold(true);
-+        heading->setFont(headingFont);
-+        root->addWidget(heading);
-+
-+        auto explanation = new QLabel(
-+            "Choose a Nintendo DS ROM and configure the expanded 3D view. "
-+            "Any readable ROM can be launched; Pokémon Black is the primary tested game.");
-+        explanation->setWordWrap(true);
-+        root->addWidget(explanation);
-+
-+        auto gameBox = new QGroupBox("Game");
-+        auto gameLayout = new QVBoxLayout(gameBox);
-+        auto romRow = new QHBoxLayout;
-+        romPath = new QLineEdit;
-+        romPath->setPlaceholderText("Path to a .nds file");
-+        romPath->setClearButtonEnabled(true);
-+        auto browse = new QPushButton("Browse…");
-+        romRow->addWidget(romPath, 1);
-+        romRow->addWidget(browse);
-+        gameLayout->addLayout(romRow);
-+        romInfo = new QLabel;
-+        romInfo->setWordWrap(true);
-+        gameLayout->addWidget(romInfo);
-+        root->addWidget(gameBox);
 +
 +        auto videoBox = new QGroupBox("Video");
 +        auto videoLayout = new QFormLayout(videoBox);
@@ -758,15 +777,11 @@ index 00000000..810e87bc
 +        fullscreen = new QCheckBox("Start fullscreen");
 +        root->addWidget(fullscreen);
 +
-+        auto note = new QLabel(
-+            "WideMelon widens submitted 3D geometry. Menus, sprites, videos, and the "
-+            "touchscreen keep their native proportions. Some games may need their "
-+            "own compatibility tuning.");
-+        note->setWordWrap(true);
-+        root->addWidget(note);
++        doNotShowAgain = new QCheckBox("Do not show this window again");
++        root->addWidget(doNotShowAgain);
 +
 +        auto buttons = new QDialogButtonBox(QDialogButtonBox::Cancel, Qt::Horizontal, this);
-+        start = buttons->addButton("Start melonDS", QDialogButtonBox::AcceptRole);
++        buttons->addButton(startup ? "Start melonDS" : "Save", QDialogButtonBox::AcceptRole);
 +        root->addWidget(buttons);
 +
 +        auto global = Config::GetGlobalTable();
@@ -787,24 +802,8 @@ index 00000000..810e87bc
 +        windowWidth->setValue(std::clamp(savedWindowWidth > 0 ? savedWindowWidth : kDefaultWindowWidth, 640, 7680));
 +        windowHeight->setValue(std::clamp(savedWindowHeight > 0 ? savedWindowHeight : kDefaultWindowHeight, 480, 4320));
 +        integerScaling->setChecked(global.GetBool("WideMelon.IntegerScaling"));
-+        fullscreen->setChecked(options.fullscreen || global.GetBool("WideMelon.Fullscreen"));
-+
-+        QString initialRom;
-+        if (options.dsRomPath.has_value())
-+            initialRom = *options.dsRomPath;
-+        if (initialRom.isEmpty())
-+            initialRom = global.GetQString("WideMelon.LastROM");
-+        romPath->setText(initialRom);
-+
-+        connect(browse, &QPushButton::clicked, this, [this]
-+        {
-+            const QString selected = QFileDialog::getOpenFileName(
-+                this, "Choose Nintendo DS ROM", romPath->text(),
-+                "Nintendo DS ROMs (*.nds *.nds.zst);;All files (*)");
-+            if (!selected.isEmpty())
-+                romPath->setText(selected);
-+        });
-+        connect(romPath, &QLineEdit::textChanged, this, [this] { updateRomInfo(); });
++        fullscreen->setChecked(startFullscreen || global.GetBool("WideMelon.Fullscreen"));
++        doNotShowAgain->setChecked(global.GetBool("WideMelon.SetupDismissed"));
 +        connect(viewport, qOverload<int>(&QComboBox::currentIndexChanged), this,
 +                [this] { updateViewportControls(); });
 +        connect(resolution, qOverload<int>(&QComboBox::currentIndexChanged), this,
@@ -823,16 +822,14 @@ index 00000000..810e87bc
 +        connect(windowHeight, qOverload<int>(&QSpinBox::valueChanged), this,
 +                [this] { updateSummary(); });
 +        connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
-+        connect(start, &QPushButton::clicked, this, [this] { startGame(); });
++        connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
 +
 +        updateViewportControls();
 +        updateResolutionControls();
-+        updateRomInfo();
 +    }
 +
-+    void apply(CLI::CommandLineOptions& options)
++    bool apply()
 +    {
-+        const QString path = QFileInfo(romPath->text().trimmed()).absoluteFilePath();
 +        const int viewWidth = viewport->currentData().toInt() == 0
 +            ? customWidth->value() : viewport->currentData().toInt();
 +        const int resolutionIndex = resolution->currentIndex();
@@ -840,30 +837,17 @@ index 00000000..810e87bc
 +        const int outputHeight = resolutionIndex < 6 ? fixedResolutionHeight(resolutionIndex) : windowHeight->value();
 +
 +        applyProfile(viewWidth, scale->currentData().toInt(), outputWidth, outputHeight,
-+                     integerScaling->isChecked(), fullscreen->isChecked(), path);
-+        Config::GetGlobalTable().SetInt("WideMelon.Resolution", resolutionIndex);
-+        options.dsRomPath = path;
-+        options.dsRomArchivePath.reset();
-+        options.boot = true;
-+        options.fullscreen = fullscreen->isChecked();
++                     integerScaling->isChecked(), fullscreen->isChecked());
++        auto global = Config::GetGlobalTable();
++        global.SetInt("WideMelon.Resolution", resolutionIndex);
++        const bool newlyDismissed = doNotShowAgain->isChecked()
++            && !global.GetBool("WideMelon.SetupDismissed");
++        global.SetBool("WideMelon.SetupDismissed", doNotShowAgain->isChecked());
++        Config::Save();
++        return newlyDismissed;
 +    }
 +
-+protected:
-+    void dragEnterEvent(QDragEnterEvent* event) override
-+    {
-+        if (event->mimeData()->hasUrls())
-+            event->acceptProposedAction();
-+    }
-+
-+    void dropEvent(QDropEvent* event) override
-+    {
-+        const auto urls = event->mimeData()->urls();
-+        if (!urls.isEmpty() && urls.first().isLocalFile())
-+        {
-+            romPath->setText(urls.first().toLocalFile());
-+            event->acceptProposedAction();
-+        }
-+    }
++    bool startFullscreen() const { return fullscreen->isChecked(); }
 +
 +private:
 +    void updateViewportControls()
@@ -902,53 +886,6 @@ index 00000000..810e87bc
 +                         .arg(extraPercent).arg(outputWidth).arg(outputHeight));
 +    }
 +
-+    void updateRomInfo()
-+    {
-+        const QString path = romPath->text().trimmed();
-+        const QFileInfo fileInfo(path);
-+        const bool readable = !path.isEmpty() && fileInfo.isFile() && fileInfo.isReadable();
-+        start->setEnabled(readable);
-+        if (!readable)
-+        {
-+            romInfo->setText("Choose a readable Nintendo DS ROM.");
-+            return;
-+        }
-+
-+        QFile file(path);
-+        QByteArray header;
-+        if (file.open(QIODevice::ReadOnly))
-+            header = file.read(0x20);
-+
-+        if (header.size() >= 0x20)
-+        {
-+            QString title = QString::fromLatin1(header.constData(), 12).remove(QChar('\0')).trimmed();
-+            QString code = QString::fromLatin1(header.constData() + 12, 4).trimmed();
-+            const int revision = static_cast<unsigned char>(header.at(0x1e));
-+            romInfo->setText(QString("%1  ·  code %2  ·  revision %3")
-+                             .arg(title.isEmpty() ? "Nintendo DS ROM" : title)
-+                             .arg(code.isEmpty() ? "—" : code)
-+                             .arg(revision));
-+        }
-+        else
-+        {
-+            romInfo->setText("Nintendo DS ROM selected. melonDS will validate it when starting.");
-+        }
-+    }
-+
-+    void startGame()
-+    {
-+        const QFileInfo fileInfo(romPath->text().trimmed());
-+        if (!fileInfo.isFile() || !fileInfo.isReadable())
-+        {
-+            QMessageBox::warning(this, "ROM not readable", "Choose a readable Nintendo DS ROM file.");
-+            return;
-+        }
-+
-+        accept();
-+    }
-+
-+    QLineEdit* romPath;
-+    QLabel* romInfo;
 +    QLabel* summary;
 +    QComboBox* viewport;
 +    QSpinBox* customWidth;
@@ -958,7 +895,8 @@ index 00000000..810e87bc
 +    QComboBox* scale;
 +    QCheckBox* integerScaling;
 +    QCheckBox* fullscreen;
-+    QPushButton* start;
++    QCheckBox* doNotShowAgain;
++    bool startup;
 +};
 +
 +}
@@ -973,7 +911,7 @@ index 00000000..810e87bc
 +    const int windowWidth = envInt("WIDEMELON_WINDOW_WIDTH", kDefaultWindowWidth);
 +    const int windowHeight = envInt("WIDEMELON_WINDOW_HEIGHT", kDefaultWindowHeight);
 +    const bool integerScaling = envInt("WIDEMELON_INTEGER", 0) != 0;
-+    applyProfile(viewWidth, scale, windowWidth, windowHeight, integerScaling, false, {});
++    applyProfile(viewWidth, scale, windowWidth, windowHeight, integerScaling, false);
 +}
 +
 +bool Configure(CLI::CommandLineOptions& options)
@@ -984,12 +922,45 @@ index 00000000..810e87bc
 +        return true;
 +    }
 +
-+    SetupDialog dialog(options);
++    auto global = Config::GetGlobalTable();
++    if (global.GetBool("WideMelon.SetupDismissed"))
++    {
++        const int savedWidth = global.GetInt("WideMelon.ViewWidth");
++        const int savedScale = global.GetInt("WideMelon.Scale");
++        const int savedWindowWidth = global.GetInt("WideMelon.WindowWidth");
++        const int savedWindowHeight = global.GetInt("WideMelon.WindowHeight");
++        const bool savedFullscreen = global.GetBool("WideMelon.Fullscreen");
++        applyProfile(savedWidth, savedScale, savedWindowWidth, savedWindowHeight,
++                     global.GetBool("WideMelon.IntegerScaling"), savedFullscreen);
++        options.fullscreen = options.fullscreen || savedFullscreen;
++        return true;
++    }
++
++    SetupDialog dialog(options.fullscreen, true);
 +    if (dialog.exec() != QDialog::Accepted)
 +        return false;
 +
-+    dialog.apply(options);
++    const bool newlyDismissed = dialog.apply();
++    options.fullscreen = dialog.startFullscreen();
++    if (newlyDismissed)
++    {
++        QMessageBox::information(nullptr, "WideMelon settings saved",
++            "WideMelon will open directly from now on. You can change these settings "
++            "at any time from Config > WideMelon settings. Viewport and resolution "
++            "changes take effect the next time WideMelon starts.");
++    }
 +    return true;
++}
++
++void OpenSettings(QWidget* parent)
++{
++    SetupDialog dialog(false, false, parent);
++    if (dialog.exec() != QDialog::Accepted)
++        return;
++
++    dialog.apply();
++    QMessageBox::information(parent, "WideMelon settings saved",
++        "Your settings will take effect the next time WideMelon starts.");
 +}
 +
 +}
