@@ -13,8 +13,9 @@ Pinned source dependencies:
   `673a22a3c7c33e96e2ff7aae7c4d2bc190dfbf92` (GPL-2.0-or-later).
 - ENet: https://github.com/lsalzman/enet, tag `v1.3.18`
   `2662c0de09e36f2a2030ccc2c528a3e4c9e8138a` (MIT).
-- Qt 6, SDL2, libarchive, zstd, and other system libraries are linked using the
-  host's development packages. Their respective licenses apply.
+- Qt 5/6 (including Qt WebSockets), SDL2, libarchive, zstd, and other system
+  libraries are linked using the host's development packages. Their respective
+  licenses apply.
 
 The Nintendo DS diagrams in melonDS's input configuration are derived from an
 illustration by Dimensions.com and are used with the copyright holder's

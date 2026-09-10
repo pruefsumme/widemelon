@@ -37,7 +37,50 @@ builds are available from the
 - Sharper 3D rendering from 1× to 8× scale
 - Fullscreen, integer scaling, and common display resolutions
 - The normal melonDS menus, controls, save states, and drag-and-drop support
+- An optional phone bottom screen and touch controller over your local network
 - Separate settings and saves, so a normal melonDS installation is untouched
+
+## Phone screen and controller
+
+WideMelon can place the physical bottom screen and DS controls on one phone.
+The bridge is off by default and never starts without an explicit action.
+
+1. Open **Phone screen…** beside the resolution selector, or later choose
+   **Config > Phone screen & controller…**.
+2. Select the private IPv4 address shared with your phone and choose
+   **Enable for this session** or **Start server**.
+3. Open the displayed `http://` address in current Android Chrome or iOS
+   Safari. The first phone to connect controls the session.
+
+While the phone is connected, the desktop uses the wide top screen by itself.
+While waiting, after a disconnect, or after any network/capture failure, the
+small desktop bottom screen remains available. Keyboard and physical-controller
+input continue to work alongside the phone.
+
+Choose **Edit controller layout…** in the phone-screen settings to arrange the
+phone controls visually. The editor shows the current landscape layout: drag
+controls to move them, drag the highlighted corner or use the mouse wheel to
+resize them, and double-click empty space to add an emulator-action button.
+Use **Ctrl+Z** to undo layout changes and **Ctrl+Shift+Z** to redo them.
+Custom buttons can trigger melonDS actions such as fast-forward, pause, frame
+step, screen swapping, or audio mute. ABXY moves and scales as one cluster, the
+directional control can use a D-pad or analog-stick appearance, and the status,
+FPS, and frame text can be hidden. Applying a layout updates a connected phone
+immediately and saves it for later sessions.
+
+The initial bridge sends the native `256 × 192` bottom screen as JPEG at up to
+30 FPS. It uses the displayed web port and the following port, so both must be
+allowed by the host firewall. It does not stream audio.
+
+> **Network warning:** the initial bridge has no authentication or encryption.
+> While it is running, the first device on the selected network can control the
+> emulator. Use it only on a network you trust, never expose its ports to the
+> internet, and stop it when finished.
+
+If no private network address is available, join the same Wi-Fi network on both
+devices or create a hotspot with your operating system. WideMelon does not
+change system network settings. Browser screen-wake-lock support normally
+requires HTTPS, so you may need to adjust the phone's auto-lock setting.
 
 ## What to expect
 
@@ -58,7 +101,7 @@ sudo apt install build-essential cmake ninja-build git pkg-config \
   extra-cmake-modules libcurl4-gnutls-dev libpcap0.8-dev libsdl2-dev \
   libarchive-dev libenet-dev libzstd-dev libfaad-dev libegl1-mesa-dev \
   libgl1-mesa-dev libwayland-dev qt6-base-dev qt6-base-private-dev \
-  qt6-multimedia-dev libqt6svg6-dev
+  qt6-multimedia-dev libqt6svg6-dev qt6-websockets-dev
 ```
 
 Then build and run:
@@ -87,6 +130,22 @@ the middle 256 pixels, so the interface and touchscreen are not widened.
 The viewport width is fixed when the process starts. This keeps CPU geometry,
 OpenGL buffers, shaders, and compositing on the same dimensions, which is why
 profile changes require a restart.
+
+The phone bridge is frontend-only. It crops the centered physical bottom layer
+from the OpenGL output, downsamples it to native resolution, and uses a bounded
+asynchronous readback/encoder pipeline. Acknowledgements make old frames drop
+instead of accumulating latency. A one-second heartbeat releases every remote
+button and touch and restores the desktop fallback after a failed connection.
+
+The phone configurator includes a generated test pattern, live bridge logs,
+frame/encode/drop/RTT metrics, optional rotating file logs, synchronous GPU
+readback for driver diagnosis, and a sanitized JSON diagnostics export. The
+following environment overrides change diagnostics only and never start the
+network listener:
+
+```sh
+WIDEMELON_PHONE_LOG_LEVEL=debug WIDEMELON_PHONE_LOG_FILE=1 ./widemelon
+```
 
 ## Development
 

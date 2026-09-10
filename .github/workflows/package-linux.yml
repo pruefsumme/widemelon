@@ -37,7 +37,7 @@ jobs:
             libsdl2-dev libarchive-dev libenet-dev libzstd-dev libfaad-dev \
             libegl1-mesa-dev libgl1-mesa-dev libwayland-dev libfuse2 \
             qtbase5-dev qtbase5-private-dev qtmultimedia5-dev \
-            libqt5svg5-dev qtwayland5
+            libqt5svg5-dev libqt5websockets5-dev qtwayland5
 
       - name: Build and test
         env:
