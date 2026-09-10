@@ -1,4 +1,42 @@
-# Contributor guide for melonDS
+# Contributor guide for WideMelon
+
+WideMelon is a modified melonDS application with shared upstream Git history.
+Report WideMelon problems and submit WideMelon changes here rather than to the
+melonDS project unless the issue has been reproduced in unmodified melonDS.
+
+Build and run the complete automated suite before submitting engine, renderer,
+shader, Qt, dependency, or packaging changes:
+
+```sh
+./scripts/build.sh
+```
+
+For the faster profile and protocol test loop:
+
+```sh
+cmake -S tests -B build/tests -G Ninja
+cmake --build build/tests
+ctest --test-dir build/tests --output-on-failure
+```
+
+Keep changes focused and preserve melonDS behavior outside the WideMelon
+feature. Rendering changes also require manual testing: the automated suite
+contains no ROM and cannot validate game compatibility or shader output.
+
+## Updating melonDS
+
+Upstream updates are deliberate, reviewed merges rather than automatic pulls.
+Maintainers should add the canonical upstream remote once:
+
+```sh
+git remote add upstream https://github.com/melonDS-emu/melonDS.git
+```
+
+Perform each update on its own branch, record the selected upstream commit in
+the merge message, resolve source-level conflicts, and run the complete build,
+packaging, and manual smoke-test workflow before merging it into `main`.
+
+## Style inherited from melonDS
 
 Please follow a style as documented here. Note that this guide was not always enforced, so some parts of the code violate it.
 
@@ -147,4 +185,4 @@ void ColorConvert(u32* dst, u16* vram)
 #endif
 ```
 
-* And at last, if you have any questions, visit us on IRC (see the readme)!
+* If you have questions, open a WideMelon discussion or issue.

@@ -1,4 +1,6 @@
 build*/
+.deps/
+dist/
 bin
 obj
 *.depend
@@ -14,6 +16,17 @@ compile_commands.json
 .cache
 
 *.exe
+
+# User dumps, saves, and captures must never be distributed.
+rom/
+saves/
+captures/
+*.nds
+*.sav
+*.dsv
+*.bin
+*.rom
+*.ml[0-9]
 
 .DS_Store
 

@@ -1,71 +1,192 @@
-<p align="center"><img src="https://raw.githubusercontent.com/melonDS-emu/melonDS/master/res/icon/melon_128x128.png"></p>
-<h2 align="center"><b>melonDS</b></h2>
 <p align="center">
-<a href="http://melonds.kuribo64.net/" alt="melonDS website"><img src="https://img.shields.io/badge/website-melonds.kuribo64.net-%2331352e.svg"></a>
-<a href="http://melonds.kuribo64.net/downloads.php" alt="Release: 1.1"><img src="https://img.shields.io/badge/release-1.1-%235c913b.svg"></a>
-<a href="https://www.gnu.org/licenses/gpl-3.0" alt="License: GPLv3"><img src="https://img.shields.io/badge/License-GPL%20v3-%23ff554d.svg"></a>
-<a href="https://kiwiirc.com/client/irc.badnik.net/?nick=IRC-Source_?#melonds" alt="IRC channel: #melonds"><img src="https://img.shields.io/badge/IRC%20chat-%23melonds-%23dd2e44.svg"></a>
-<a href="https://discord.gg/pAMAtExcqV" alt="Discord"><img src="https://img.shields.io/badge/Discord-Kuribo64-7289da?logo=discord&logoColor=white"></a>
-<br>
-<a href="https://github.com/melonDS-emu/melonDS/actions/workflows/build-windows.yml?query=event%3Apush"><img src="https://github.com/melonDS-emu/melonDS/actions/workflows/build-windows.yml/badge.svg" /></a>
-<a href="https://github.com/melonDS-emu/melonDS/actions/workflows/build-ubuntu.yml?query=event%3Apush"><img src="https://github.com/melonDS-emu/melonDS/actions/workflows/build-ubuntu.yml/badge.svg" /></a>
-<a href="https://github.com/melonDS-emu/melonDS/actions/workflows/build-macos.yml?query=event%3Apush"><img src="https://github.com/melonDS-emu/melonDS/actions/workflows/build-macos.yml/badge.svg" /></a>
-<a href="https://github.com/melonDS-emu/melonDS/actions/workflows/build-bsd.yml?query=event%3Apush"><img src="https://github.com/melonDS-emu/melonDS/actions/workflows/build-bsd.yml/badge.svg" /></a>
+  <img src="assets/widemelon.png" alt="WideMelon logo" width="220">
 </p>
-DS emulator, sorta
 
-The goal is to do things right and fast, akin to blargSNES (but hopefully better). But also to, you know, have a fun challenge :)
-<hr>
+<h1 align="center">WideMelon</h1>
 
-## How to use
+<p align="center">
+  An experimental widescreen build of melonDS.
+</p>
 
-Firmware boot (not direct boot) requires a BIOS/firmware dump from an original DS or DS Lite.
-DS firmwares dumped from a DSi or 3DS aren't bootable and only contain configuration data, thus they are only suitable when booting games directly.
+<p align="center">
+  <a href="https://github.com/pruefsumme/widemelon/actions/workflows/ci.yml"><img src="https://github.com/pruefsumme/widemelon/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg" alt="GPL-3.0-or-later"></a>
+</p>
 
-### Possible firmware sizes
+WideMelon lets Nintendo DS games show more of their 3D world on a widescreen
+display. Menus, sprites, videos, and the touchscreen stay at their normal size
+instead of being stretched.
 
- * 128KB: DSi/3DS DS-mode firmware (reduced size due to lacking bootcode)
- * 256KB: regular DS firmware
- * 512KB: iQue DS firmware
+## Download
 
-DS BIOS dumps from a DSi or 3DS can be used with no compatibility issues. DSi BIOS dumps (in DSi mode) are not compatible. Or maybe they are. I don't know.
+Get the latest Linux AppImage from the
+[Releases page](https://github.com/pruefsumme/widemelon/releases). Development
+builds are available from the
+[Package Linux workflow](https://github.com/pruefsumme/widemelon/actions/workflows/package-linux.yml).
 
-As for the rest, the interface should be pretty straightforward. If you have a question, don't hesitate to ask, though!
+## Play
 
-## How to build
-See [BUILD.md](./BUILD.md) for build instructions.
+1. Open WideMelon.
+2. Choose the viewport, window resolution, and render scale you want.
+3. Select **Start melonDS**.
+4. Drag a `.nds` file onto the melonDS window, or use **File > Open ROM**.
 
-## TODO LIST
+## What you get
 
- * better DSi emulation
- * better OpenGL rendering
- * netplay
- * the impossible quest of pixel-perfect 3D graphics
- * support for rendering screens to separate windows
- * emulating some fancy addons
- * other non-core shit (debugger, graphics viewers, etc)
+- 4:3, 16:10, 16:9, 21:9, 32:9, and custom views
+- Sharper 3D rendering from 1× to 8× scale
+- Fullscreen, integer scaling, and common display resolutions
+- The normal melonDS menus, controls, save states, and drag-and-drop support
+- An optional phone bottom screen and touch controller over your local network
+- Separate settings and saves, so a normal melonDS installation is untouched
 
-### TODO LIST FOR LATER (low priority)
+## Phone screen and controller
 
- * big-endian compatibility (Wii, etc)
- * LCD refresh time (used by some games for blending effects)
- * any feature you can eventually ask for that isn't outright stupid
+WideMelon can place the physical bottom screen and DS controls on one phone.
+The bridge is off by default and never starts without an explicit action.
 
-## Credits
+1. Open **Phone screen…** beside the resolution selector, or later choose
+   **Config > Phone screen & controller…**.
+2. Select the private IPv4 address shared with your phone and choose
+   **Enable for this session** or **Start server**.
+3. Open the displayed `http://` address in current Android Chrome or iOS
+   Safari. The first phone to connect controls the session.
 
- * Martin for GBAtek, a good piece of documentation
- * Cydrak for the extra 3D GPU research
- * limittox for the icon
- * All of you comrades who have been testing melonDS, reporting issues, suggesting shit, etc
+While the phone is connected, the desktop uses the wide top screen by itself.
+While waiting, after a disconnect, or after any network/capture failure, the
+small desktop bottom screen remains available. Keyboard and physical-controller
+input continue to work alongside the phone.
 
-## Licenses
+Choose **Edit controller layout…** in the phone-screen settings to arrange the
+phone controls visually. The editor shows the current landscape layout: drag
+controls to move them, drag the highlighted corner or use the mouse wheel to
+resize them, and double-click empty space to add an emulator-action button.
+Use **Ctrl+Z** to undo layout changes and **Ctrl+Shift+Z** to redo them.
+Custom buttons can trigger melonDS actions such as fast-forward, pause, frame
+step, screen swapping, or audio mute. ABXY moves and scales as one cluster, the
+directional control can use a D-pad or analog-stick appearance, and the status,
+FPS, and frame text can be hidden. Applying a layout updates a connected phone
+immediately and saves it for later sessions.
 
-[![GNU GPLv3 Image](https://www.gnu.org/graphics/gplv3-127x51.png)](http://www.gnu.org/licenses/gpl-3.0.en.html)
+The initial bridge sends the native `256 × 192` bottom screen as JPEG at up to
+30 FPS. It uses the displayed web port and the following port, so both must be
+allowed by the host firewall. It does not stream audio.
 
-melonDS is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+> **Network warning:** the initial bridge has no authentication or encryption.
+> While it is running, the first device on the selected network can control the
+> emulator. Use it only on a network you trust, never expose its ports to the
+> internet, and stop it when finished.
 
-### External
-* Images used in the Input Config Dialog - see `src/frontend/qt_sdl/InputConfig/resources/LICENSE.md`
+If no private network address is available, join the same Wi-Fi network on both
+devices or create a hotspot with your operating system. WideMelon does not
+change system network settings. Browser screen-wake-lock support normally
+requires HTTPS, so you may need to adjust the phone's auto-lock setting.
+
+## What to expect
+
+WideMelon is still an alpha. Some games hide objects outside the original
+screen area, and some effects may not cover the added space. Battles, videos,
+and menus can remain 4:3.
+
+The widescreen mode uses the classic OpenGL renderer. Ready-made builds are
+currently available for Linux only.
+
+## Build from source
+
+On Ubuntu 24.04, install the build tools and libraries:
+
+```sh
+sudo apt update
+sudo apt install build-essential cmake ninja-build git pkg-config \
+  extra-cmake-modules libcurl4-gnutls-dev libpcap0.8-dev libsdl2-dev \
+  libarchive-dev libzstd-dev libegl1-mesa-dev \
+  libgl1-mesa-dev libwayland-dev qt6-base-dev qt6-base-private-dev \
+  qt6-multimedia-dev libqt6svg6-dev qt6-websockets-dev
+```
+
+Then build and run:
+
+```sh
+./scripts/build.sh
+./widemelon
+```
+
+The build script fetches WideMelon's pinned FAAD2 and ENet dependencies,
+builds the checked-in emulator source, and runs the automated tests.
+
+## Technical overview
+
+A Nintendo DS screen is normally 256 × 192 pixels. WideMelon creates a wider
+3D target and adjusts the projection to reveal extra geometry on both sides:
+
+```text
+normal:     [       256 pixels       ]
+widescreen: [ extra ][ 256 native ][ extra ]
+```
+
+The original view keeps its scale and center. Native 2D layers are placed over
+the middle 256 pixels, so the interface and touchscreen are not widened.
+
+The viewport width is fixed when the process starts. This keeps CPU geometry,
+OpenGL buffers, shaders, and compositing on the same dimensions, which is why
+profile changes require a restart.
+
+The phone bridge is frontend-only. It crops the centered physical bottom layer
+from the OpenGL output, downsamples it to native resolution, and uses a bounded
+asynchronous readback/encoder pipeline. Acknowledgements make old frames drop
+instead of accumulating latency. A one-second heartbeat releases every remote
+button and touch and restores the desktop fallback after a failed connection.
+
+The phone configurator includes a generated test pattern, live bridge logs,
+frame/encode/drop/RTT metrics, optional rotating file logs, synchronous GPU
+readback for driver diagnosis, and a sanitized JSON diagnostics export. The
+following environment overrides change diagnostics only and never start the
+network listener:
+
+```sh
+WIDEMELON_PHONE_LOG_LEVEL=debug WIDEMELON_PHONE_LOG_FILE=1 ./widemelon
+```
+
+## Development
+
+WideMelon is maintained as a standalone repository with melonDS ancestry. The
+actual modified emulator source is checked in under `src/`; there is no patch
+generation step or nested source checkout.
+
+Build and test changes with:
+
+```sh
+./scripts/build.sh
+```
+
+Maintainers can add `https://github.com/melonDS-emu/melonDS.git` as an
+`upstream` remote and merge selected upstream commits on a dedicated update
+branch. Upstream updates are never automatic and must pass the full renderer,
+frontend, and packaging verification described in `CONTRIBUTING.md`.
+
+Automated or headless runs can supply a profile through environment variables:
+
+```sh
+WIDEMELON_VIEW_WIDTH=448 WIDEMELON_SCALE=4 \
+  ./build/widemelon /path/to/game.nds
+```
+
+WideMelon's source history is based on melonDS commit
+`906e9ebb27da8c6a715cd7abab4abfe8a8d29427`; later upstream merges remain
+visible in Git history.
+
+For a tagged binary release, commit the release state and create its matching
+complete source archive:
+
+```sh
+./scripts/package-source.sh 0.2.0-alpha
+```
+
+## Licence
+
+WideMelon and its melonDS base are GPL-3.0-or-later. WideMelon is independent
+and is not affiliated with or endorsed by the melonDS project, Nintendo, Game
+Freak, or The Pokémon Company.
+
+See [LICENSE](LICENSE) and [THIRD_PARTY.md](THIRD_PARTY.md) for complete licence
+and attribution information.

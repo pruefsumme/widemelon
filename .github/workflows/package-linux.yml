@@ -1,0 +1,96 @@
+name: Package Linux
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  appimage:
+    name: AppImage
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Select version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="0.2.0-dev.${GITHUB_RUN_NUMBER}"
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends \
+            build-essential cmake ninja-build git pkg-config wget xauth xvfb \
+            extra-cmake-modules libcurl4-gnutls-dev libpcap0.8-dev \
+            libsdl2-dev libarchive-dev libzstd-dev \
+            libegl1-mesa-dev libgl1-mesa-dev libwayland-dev libfuse2 \
+            qtbase5-dev qtbase5-private-dev qtmultimedia5-dev \
+            libqt5svg5-dev libqt5websockets5-dev qtwayland5
+
+      - name: Build and test
+        env:
+          WIDEMELON_USE_QT6: "0"
+        run: ./scripts/build.sh
+
+      - name: Generate complete source archive
+        run: ./scripts/package-source.sh "$VERSION"
+
+      - name: Stage application
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_INSTALL_PREFIX=/usr -DENABLE_LTO_RELEASE=OFF -DUSE_QT6=OFF
+          DESTDIR="$GITHUB_WORKSPACE/build/AppDir" cmake --install build
+          for size in 16 32 48 64 128 256; do
+            install -Dm644 "assets/icons/widemelon-$size.png" \
+              "build/AppDir/usr/share/icons/hicolor/${size}x${size}/apps/io.github.pruefsumme.WideMelon.png"
+          done
+
+      - name: Build AppImage
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+          ARCH: x86_64
+          EXTRA_PLATFORM_PLUGINS: "libqwayland-egl.so;libqwayland-generic.so"
+          EXTRA_QT_MODULES: "waylandcompositor"
+          QMAKE: /usr/lib/qt5/bin/qmake
+        run: |
+          mkdir -p build/appimage-tools
+          wget --quiet -P build/appimage-tools \
+            https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          wget --quiet -P build/appimage-tools \
+            https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+          chmod +x build/appimage-tools/*.AppImage
+          export LDAI_OUTPUT="$GITHUB_WORKSPACE/dist/WideMelon-${VERSION}-x86_64.AppImage"
+          build/appimage-tools/linuxdeploy-x86_64.AppImage \
+            --appdir build/AppDir --plugin qt --output appimage
+          xvfb-run -a "$LDAI_OUTPUT" --appimage-extract-and-run --help
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: WideMelon-${{ env.VERSION }}-linux-x86_64
+          path: |
+            dist/WideMelon-${{ env.VERSION }}-x86_64.AppImage
+            dist/widemelon-${{ env.VERSION }}-source.tar.xz
+          if-no-files-found: error
+
+      - name: Publish tagged release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            "dist/WideMelon-${VERSION}-x86_64.AppImage" \
+            "dist/widemelon-${VERSION}-source.tar.xz" \
+            --verify-tag --generate-notes --title "WideMelon $VERSION"

@@ -1,0 +1,68 @@
+#include "frontend/qt_sdl/PhoneProtocol.h"
+
+#include <cstring>
+#include <iostream>
+
+#include <QJsonObject>
+#include <QBuffer>
+#include <QCoreApplication>
+#include <QImage>
+#include <QImageReader>
+#include <QImageWriter>
+#include <QtEndian>
+
+int main(int argc, char** argv)
+{
+    QCoreApplication application(argc, argv);
+    if (!PhoneProtocol::IsPrivateIPv4(QHostAddress("10.1.2.3").toIPv4Address())) return 1;
+    if (!PhoneProtocol::IsPrivateIPv4(QHostAddress("172.16.4.5").toIPv4Address())) return 2;
+    if (!PhoneProtocol::IsPrivateIPv4(QHostAddress("192.168.1.9").toIPv4Address())) return 3;
+    if (PhoneProtocol::IsPrivateIPv4(QHostAddress("8.8.8.8").toIPv4Address())) return 4;
+
+    QJsonObject touch{{"active", true}, {"x", 123}, {"y", 45}};
+    QJsonObject input{{"v", 1}, {"type", "input"}, {"seq", 7}, {"buttons", 0x411},
+                      {"hotkeys", 1 << 4}, {"touch", touch}};
+    melonDS::u32 keys = 0, hotkeys = 0, packedTouch = 0;
+    quint32 sequence = 0;
+    if (!PhoneProtocol::ParseInput(input, keys, hotkeys, packedTouch, sequence) || sequence != 7) return 5;
+    if (keys != ((~0x411U) & 0xFFFU)) return 6;
+    if (hotkeys != (1U << 4)) return 20;
+    if (!(packedTouch & 0x80000000U) || (packedTouch & 0xFF) != 123 || ((packedTouch >> 8) & 0xFF) != 45) return 7;
+    input["buttons"] = 0x1000;
+    if (PhoneProtocol::ParseInput(input, keys, hotkeys, packedTouch, sequence)) return 8;
+    input["buttons"] = 0;
+    input["hotkeys"] = 1 << 23;
+    if (PhoneProtocol::ParseInput(input, keys, hotkeys, packedTouch, sequence)) return 21;
+    input["hotkeys"] = 0;
+    input["touch"] = QJsonObject{{"active", true}, {"x", 256}, {"y", 0}};
+    if (PhoneProtocol::ParseInput(input, keys, hotkeys, packedTouch, sequence)) return 9;
+    input["touch"] = QJsonObject{{"active", false}, {"x", 0.5}, {"y", 0}};
+    if (PhoneProtocol::ParseInput(input, keys, hotkeys, packedTouch, sequence)) return 17;
+
+    const QByteArray jpeg("jpeg-data");
+    const QByteArray frame = PhoneProtocol::BuildFrame(0x12345678U, 0x0102030405060708ULL, jpeg);
+    if (frame.size() != PhoneProtocol::FrameHeaderSize + jpeg.size()) return 10;
+    if (std::memcmp(frame.constData(), "WMF1", 4) != 0) return 11;
+    if (qFromLittleEndian<quint32>(reinterpret_cast<const uchar*>(frame.constData() + 4)) != 0x12345678U) return 12;
+    if (qFromLittleEndian<quint64>(reinterpret_cast<const uchar*>(frame.constData() + 8)) != 0x0102030405060708ULL) return 13;
+    if (qFromLittleEndian<quint16>(reinterpret_cast<const uchar*>(frame.constData() + 16)) != 256) return 14;
+    if (qFromLittleEndian<quint16>(reinterpret_cast<const uchar*>(frame.constData() + 18)) != 192) return 15;
+    if (frame[20] != 1 || frame.mid(24) != jpeg) return 16;
+
+    QImage testImage(256, 192, QImage::Format_RGB32);
+    testImage.fill(QColor(20, 80, 160));
+    QByteArray encoded;
+    QBuffer output(&encoded);
+    output.open(QIODevice::WriteOnly);
+    QImageWriter writer(&output, "jpeg");
+    writer.setQuality(85);
+    if (!writer.write(testImage) || encoded.isEmpty()) return 18;
+    QBuffer inputBuffer(&encoded);
+    inputBuffer.open(QIODevice::ReadOnly);
+    QImageReader reader(&inputBuffer, "jpeg");
+    const QImage decoded = reader.read();
+    if (decoded.size() != QSize(256, 192)) return 19;
+
+    std::cout << "Phone protocol validation and frame header passed\n";
+    return 0;
+}
