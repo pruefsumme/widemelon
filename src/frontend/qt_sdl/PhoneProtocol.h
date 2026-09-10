@@ -45,22 +45,47 @@ inline HttpRequest ParseHttpRequest(const QByteArray& data, const QByteArray& ex
     const int end = data.indexOf("\r\n\r\n");
     if (end < 0) return {HttpRequestKind::NeedMore, {}};
     const QList<QByteArray> lines = data.left(end).split('\n');
-    const QList<QByteArray> first = lines.value(0).trimmed().split(' ');
+    const QList<QByteArray> first = lines.value(0).chopped(1).split(' ');
     if (first.size() != 3 || first[2] != "HTTP/1.1") return {};
 
     QByteArray host, origin, upgrade, connection;
     int hostCount = 0, originCount = 0, upgradeCount = 0, connectionCount = 0;
+    int lengthCount = 0, keyCount = 0, versionCount = 0;
     bool invalidBody = data.size() != end + 4;
     for (int i = 1; i < lines.size(); i++)
     {
-        const QByteArray line = lines[i].trimmed();
+        // Reject folded fields, whitespace before ':', bare LF, and control
+        // characters so our admission check and Qt's upgrade parser agree.
+        QByteArray line = lines[i];
+        if (i < lines.size() - 1)
+        {
+            if (!line.endsWith('\r')) return {};
+            line.chop(1);
+        }
+        const int colon = line.indexOf(':');
+        if (colon <= 0) return {};
+        for (int j = 0; j < line.size(); j++)
+        {
+            const unsigned char c = static_cast<unsigned char>(line[j]);
+            if (j < colon)
+            {
+                if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+                    || (c >= '0' && c <= '9') || QByteArray("!#$%&'*+-.^_`|~").contains(char(c)))) return {};
+            }
+            else if ((c < 32 && c != '\t') || c == 127) return {};
+        }
         const QByteArray lower = line.toLower();
         if (lower.startsWith("host:")) { host = line.mid(5).trimmed(); hostCount++; }
         else if (lower.startsWith("origin:")) { origin = line.mid(7).trimmed(); originCount++; }
         else if (lower.startsWith("upgrade:")) { upgrade = line.mid(8).trimmed().toLower(); upgradeCount++; }
         else if (lower.startsWith("connection:")) { connection = line.mid(11).trimmed(); connectionCount++; }
         else if (lower.startsWith("transfer-encoding:")) invalidBody = true;
-        else if (lower.startsWith("content-length:") && line.mid(15).trimmed() != "0") invalidBody = true;
+        else if (lower.startsWith("content-length:"))
+        {
+            if (++lengthCount > 1 || line.mid(15).trimmed() != "0") invalidBody = true;
+        }
+        else if (lower.startsWith("sec-websocket-key:") && ++keyCount > 1) return {};
+        else if (lower.startsWith("sec-websocket-version:") && ++versionCount > 1) return {};
     }
     if (hostCount != 1 || host != expectedHost || invalidBody) return {};
 
@@ -87,8 +112,7 @@ inline bool IsPrivateIPv4(quint32 address)
 inline bool IsSameIPv4Subnet(quint32 address, quint32 networkAddress, int prefixLength)
 {
     if (prefixLength < 0 || prefixLength > 32) return false;
-    const quint32 mask = prefixLength == 0 ? 0U : (0xFFFFFFFFU << (32 - prefixLength));
-    return (address & mask) == (networkAddress & mask);
+    return QHostAddress(address).isInSubnet(QHostAddress(networkAddress), prefixLength);
 }
 
 inline bool ParseInput(const QJsonObject& object, melonDS::u32& activeLowKeys,

@@ -56,6 +56,17 @@ int main(int argc, char** argv)
         != PhoneProtocol::HttpRequestKind::Invalid) return 42;
     if (PhoneProtocol::ParseHttpRequest(QByteArray(PhoneProtocol::MaxHttpHeader + 1, 'x'), host).kind
         != PhoneProtocol::HttpRequestKind::Invalid) return 43;
+    for (const QByteArray& field : {QByteArray(" Host: ") + host, QByteArray("Host : ") + host,
+            QByteArray("X-Bad Header: value"), QByteArray("X-Test: a\rb"),
+            QByteArray("X-Test: a\nb"), QByteArray("Content-Length: 0\r\nContent-Length: 0"),
+            QByteArray("Sec-WebSocket-Key: a\r\nSec-WebSocket-Key: b"),
+            QByteArray("Sec-WebSocket-Version: 13\r\nSec-WebSocket-Version: 12")})
+    {
+        QByteArray malformed = get;
+        malformed.insert(malformed.indexOf("\r\n\r\n"), "\r\n" + field);
+        if (PhoneProtocol::ParseHttpRequest(malformed, host).kind
+            != PhoneProtocol::HttpRequestKind::Invalid) return 44;
+    }
 
     QJsonObject touch{{"active", true}, {"x", 123}, {"y", 45}};
     QJsonObject input{{"v", PhoneProtocol::Version}, {"type", "input"}, {"seq", 7}, {"buttons", 0x411},
@@ -117,6 +128,7 @@ int main(int argc, char** argv)
         if (limiter.isBlocked("peer-a", attempt)) return 26;
     }
     limiter.recordFailure("peer-a", 4);
+    limiter.recordFailure("peer-a", 50000);
     if (!limiter.isBlocked("peer-a", 4) || !limiter.isBlocked("peer-a", 60003)
         || limiter.isBlocked("peer-a", 60004)) return 27;
     if (credentials.secret() != firstSecret || credentials.code() != firstCode) return 28;
@@ -124,6 +136,7 @@ int main(int argc, char** argv)
     limiter.clear();
     for (int attempt = 0; attempt < PhoneAuthenticationLimiter::GlobalFailureLimit; attempt++)
         limiter.recordFailure(QString("peer-%1").arg(attempt), attempt);
+    limiter.recordFailure("unseen-peer", 50000);
     if (!limiter.isBlocked("unseen-peer", 20) || limiter.isBlocked("unseen-peer", 60019)) return 29;
     if (credentials.secret() != firstSecret || credentials.code() != firstCode) return 30;
     credentials.regenerate();

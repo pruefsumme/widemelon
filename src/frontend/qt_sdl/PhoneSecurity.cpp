@@ -68,6 +68,11 @@ bool PhonePairingCredentials::matches(const QString& candidate) const
 
 void PhoneAuthenticationLimiter::prune(qint64 now)
 {
+    for (auto iterator = peerBlockedUntil.begin(); iterator != peerBlockedUntil.end();)
+    {
+        if (iterator.value() <= now) iterator = peerBlockedUntil.erase(iterator);
+        else ++iterator;
+    }
     while (!globalFailures.isEmpty() && globalFailures.first() <= now - FailureWindowMs)
         globalFailures.removeFirst();
     for (auto iterator = failuresByPeer.begin(); iterator != failuresByPeer.end();)
@@ -91,7 +96,9 @@ bool PhoneAuthenticationLimiter::isBlocked(const QString& peer, qint64 now)
 
 void PhoneAuthenticationLimiter::recordFailure(const QString& peer, qint64 now)
 {
-    prune(now);
+    // Already-open pairing sockets can still submit during a cooldown. They
+    // must not extend it, including when they carry the correct credential.
+    if (isBlocked(peer, now)) return;
     QList<qint64>& peerFailures = failuresByPeer[peer];
     peerFailures.append(now);
     globalFailures.append(now);
