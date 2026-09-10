@@ -7,6 +7,8 @@
 
 #include <QApplication>
 #include <QLabel>
+#include <QGroupBox>
+#include <QPushButton>
 #include <QTemporaryDir>
 #include <QFile>
 #include <QElapsedTimer>
@@ -78,6 +80,28 @@ int main(int argc, char** argv)
     const auto originalQr = qrLabel->pixmap(Qt::ReturnByValue).cacheKey();
     CHECK(QMetaObject::invokeMethod(&dialog, "updateUi", Qt::DirectConnection));
     CHECK(qrLabel->pixmap(Qt::ReturnByValue).cacheKey() == originalQr);
+    dialog.show();
+    for (const QSize& size : {QSize(560, 680), QSize(480, 640)})
+    {
+        dialog.resize(size);
+        application.processEvents();
+        CHECK(dialog.height() <= size.height());
+        auto bounds = [&](QWidget* widget) {
+            return QRect(widget->mapTo(&dialog, QPoint()), widget->size());
+        };
+        CHECK(qrLabel->width() <= 168 && qrLabel->height() <= 168);
+        CHECK(qrLabel->pixmap(Qt::ReturnByValue).width() <= qrLabel->width());
+        for (QLabel* label : qrLabel->parentWidget()->findChildren<QLabel*>())
+        {
+            CHECK(dialog.rect().contains(bounds(label)));
+            if (label != qrLabel) CHECK(!bounds(label).intersects(bounds(qrLabel)));
+        }
+        for (QGroupBox* group : dialog.findChildren<QGroupBox*>())
+            if (group->isCheckable()) group->setChecked(true);
+        application.processEvents();
+        for (QPushButton* button : dialog.findChildren<QPushButton*>())
+            if (button->parentWidget() == &dialog) CHECK(dialog.rect().contains(bounds(button)));
+    }
     if (qEnvironmentVariableIsSet("WIDEMELON_PHONE_TEST_SCREENSHOT"))
     {
         dialog.show();

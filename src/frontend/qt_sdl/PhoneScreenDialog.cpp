@@ -17,6 +17,7 @@
 #include <QGuiApplication>
 #include <QHostAddress>
 #include <QGroupBox>
+#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMessageBox>
@@ -26,6 +27,7 @@
 #include <QPushButton>
 #include <QScreen>
 #include <QScrollBar>
+#include <QScrollArea>
 #include <QSpinBox>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -39,6 +41,7 @@
 namespace
 {
 std::atomic<bool> requestedForSession {false};
+constexpr int kPairingQrSize = 168;
 
 QString addressLabel(const QString& value)
 {
@@ -55,7 +58,7 @@ QPixmap pairingQrCode(const QString& text)
     const qrcodegen::QrCode code = qrcodegen::QrCode::encodeText(
         utf8.constData(), qrcodegen::QrCode::Ecc::MEDIUM);
     constexpr int border = 4;
-    constexpr int scale = 5;
+    const int scale = std::max(1, kPairingQrSize / (code.getSize() + border * 2));
     const int pixels = (code.getSize() + border * 2) * scale;
     QImage image(pixels, pixels, QImage::Format_RGB32);
     image.fill(Qt::white);
@@ -91,6 +94,7 @@ PhoneScreenDialog::PhoneScreenDialog(PhoneBridgeManager* manager, bool startup, 
     auto sessionLayout = new QFormLayout(sessionBox);
     status = new QLabel;
     address = new QLabel;
+    address->setWordWrap(true);
     address->setTextInteractionFlags(Qt::TextSelectableByMouse);
     sessionLayout->addRow("Status", status);
     auto addressRow = new QHBoxLayout;
@@ -100,9 +104,9 @@ PhoneScreenDialog::PhoneScreenDialog(PhoneBridgeManager* manager, bool startup, 
     sessionLayout->addRow("Phone URL", addressRow);
     pairingQr = new QLabel;
     pairingQr->setAlignment(Qt::AlignCenter);
-    pairingQr->setMinimumHeight(210);
+    pairingQr->setFixedSize(kPairingQrSize, kPairingQrSize);
+    pairingQr->setWordWrap(true);
     pairingQr->setText("Start the server to create a pairing code.");
-    sessionLayout->addRow("Scan to pair", pairingQr);
     pairingCode = new QLabel;
     pairingCode->setTextInteractionFlags(Qt::TextSelectableByMouse);
     QFont codeFont = pairingCode->font();
@@ -112,7 +116,19 @@ PhoneScreenDialog::PhoneScreenDialog(PhoneBridgeManager* manager, bool startup, 
     sessionLayout->addRow("Manual code", pairingCode);
     connectedClient = new QLabel("None");
     sessionLayout->addRow("Connected phone", connectedClient);
+    sessionLayout->addRow("Scan to pair", pairingQr);
     root->addWidget(sessionBox);
+
+    // Keep pairing details and actions outside the scrolling settings area.
+    // Expanded diagnostics must not push them off a smaller laptop screen.
+    auto settingsArea = new QScrollArea;
+    settingsArea->setWidgetResizable(true);
+    settingsArea->setFrameShape(QFrame::NoFrame);
+    auto settingsContents = new QWidget;
+    auto settingsLayout = new QVBoxLayout(settingsContents);
+    settingsLayout->setContentsMargins(0, 0, 0, 0);
+    settingsArea->setWidget(settingsContents);
+    root->addWidget(settingsArea, 1);
 
     auto networkBox = new QGroupBox("Network & stream");
     auto form = new QFormLayout(networkBox);
@@ -137,7 +153,7 @@ PhoneScreenDialog::PhoneScreenDialog(PhoneBridgeManager* manager, bool startup, 
     form->addRow("Phone controls", layoutButton);
     auto securityButton = new QPushButton("Security details…");
     form->addRow("Advanced", securityButton);
-    root->addWidget(networkBox);
+    settingsLayout->addWidget(networkBox);
 
     auto diagnosticsBox = new QGroupBox("Advanced diagnostics");
     diagnosticsBox->setCheckable(true);
@@ -164,28 +180,27 @@ PhoneScreenDialog::PhoneScreenDialog(PhoneBridgeManager* manager, bool startup, 
     {
         for (QWidget* widget : diagnosticWidgets) widget->setVisible(visible);
     });
-    root->addWidget(diagnosticsBox);
+    settingsLayout->addWidget(diagnosticsBox);
 
     logs = new QPlainTextEdit;
     logs->setReadOnly(true);
     logs->setMaximumBlockCount(1000);
     logs->setPlaceholderText("Bridge events will appear here after the session is enabled.");
-    root->addWidget(logs, 1);
+    settingsLayout->addWidget(logs, 1);
 
-    auto actions = new QHBoxLayout;
+    auto actions = new QGridLayout;
     startButton = new QPushButton(startup ? "Enable for this session" : "Start server");
     stopButton = new QPushButton(startup ? "Disable for this session" : "Stop server");
     auto disconnect = new QPushButton("Disconnect phone");
     auto regenerate = new QPushButton("Generate new code");
     auto revoke = new QPushButton("Revoke pairing");
     auto exportButton = new QPushButton("Export diagnostics…");
-    actions->addWidget(startButton);
-    actions->addWidget(stopButton);
-    actions->addWidget(disconnect);
-    actions->addWidget(regenerate);
-    actions->addWidget(revoke);
-    actions->addStretch();
-    actions->addWidget(exportButton);
+    actions->addWidget(startButton, 0, 0);
+    actions->addWidget(stopButton, 0, 1);
+    actions->addWidget(disconnect, 0, 2);
+    actions->addWidget(regenerate, 1, 0);
+    actions->addWidget(revoke, 1, 1);
+    actions->addWidget(exportButton, 1, 2);
     root->addLayout(actions);
 
     auto closeButton = new QDialogButtonBox(QDialogButtonBox::Close);
