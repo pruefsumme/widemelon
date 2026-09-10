@@ -522,7 +522,7 @@ QStringList PhoneBridgeManager::logLines() const
     return recentLogs;
 }
 
-bool PhoneBridgeManager::exportDiagnostics(const QString& path, QString* error) const
+bool PhoneBridgeManager::exportDiagnostics(const QString& path, const PhoneFirewallResult& firewall, QString* error) const
 {
     QJsonObject root;
     const PhoneBridgeMetrics m = metrics();
@@ -542,7 +542,8 @@ bool PhoneBridgeManager::exportDiagnostics(const QString& path, QString* error) 
     root["lastEncodeMs"] = m.lastEncodeMs;
     root["averageEncodeMs"] = m.averageEncodeMs;
     root["roundTripMs"] = m.roundTripMs;
-    const PhoneFirewallResult firewall = InspectPhoneFirewall(currentSettings.address, currentSettings.basePort);
+    // The dialog supplies its asynchronous probe result. Running firewall
+    // commands here would block heartbeat and frame delivery for seconds.
     root["firewallDetected"] = firewall.detected;
     root["firewall"] = firewall.status == PhoneFirewallStatus::Allowed ? "allowed"
         : firewall.status == PhoneFirewallStatus::Blocked ? "blocked" : "unknown";

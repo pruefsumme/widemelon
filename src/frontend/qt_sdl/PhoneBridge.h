@@ -19,6 +19,7 @@
 
 #include "types.h"
 #include "PhoneSecurity.h"
+#include "PhoneFirewall.h"
 
 class QTcpServer;
 class QTcpSocket;
@@ -103,7 +104,7 @@ public:
 
     PhoneBridgeMetrics metrics() const;
     QStringList logLines() const;
-    bool exportDiagnostics(const QString& path, QString* error = nullptr) const;
+    bool exportDiagnostics(const QString& path, const PhoneFirewallResult& firewall, QString* error = nullptr) const;
 
 signals:
     void statusChanged();

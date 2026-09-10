@@ -4,6 +4,7 @@
 #pragma once
 
 #include <QDialog>
+#include "PhoneFirewall.h"
 
 class QCheckBox;
 class QComboBox;
@@ -59,6 +60,8 @@ private:
     QPushButton* stopButton;
     QTimer* refreshTimer;
     bool firewallChecked = false;
+    PhoneFirewallResult firewallResult;
+    QString displayedPairingUrl;
 };
 
 namespace WideMelon

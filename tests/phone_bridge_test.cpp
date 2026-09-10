@@ -3,8 +3,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "frontend/qt_sdl/PhoneBridge.h"
 #include "frontend/qt_sdl/PhoneProtocol.h"
+#include "frontend/qt_sdl/PhoneScreenDialog.h"
 
-#include <QCoreApplication>
+#include <QApplication>
+#include <QLabel>
+#include <QTemporaryDir>
+#include <QFile>
 #include <QElapsedTimer>
 #include <QEventLoop>
 #include <QJsonDocument>
@@ -51,7 +55,7 @@ bool released(const PhoneBridgeManager& bridge)
 
 int main(int argc, char** argv)
 {
-    QCoreApplication application(argc, argv);
+    QApplication application(argc, argv);
     QTcpServer portReservation;
     CHECK(portReservation.listen(QHostAddress::LocalHost, 0));
     const quint16 port = portReservation.serverPort();
@@ -66,6 +70,27 @@ int main(int argc, char** argv)
     CHECK(bridge.start());
     const QString originalCode = bridge.pairingCode();
     const QString originalUrl = bridge.pairingUrl();
+    PhoneScreenDialog dialog(&bridge, false);
+    QLabel* qrLabel = nullptr;
+    for (QLabel* label : dialog.findChildren<QLabel*>())
+        if (!label->pixmap(Qt::ReturnByValue).isNull()) qrLabel = label;
+    CHECK(qrLabel);
+    const auto originalQr = qrLabel->pixmap(Qt::ReturnByValue).cacheKey();
+    CHECK(QMetaObject::invokeMethod(&dialog, "updateUi", Qt::DirectConnection));
+    CHECK(qrLabel->pixmap(Qt::ReturnByValue).cacheKey() == originalQr);
+    if (qEnvironmentVariableIsSet("WIDEMELON_PHONE_TEST_SCREENSHOT"))
+    {
+        dialog.show();
+        application.processEvents();
+        CHECK(dialog.grab().save(qEnvironmentVariable("WIDEMELON_PHONE_TEST_SCREENSHOT")));
+    }
+    QTemporaryDir diagnostics;
+    CHECK(diagnostics.isValid());
+    CHECK(bridge.exportDiagnostics(diagnostics.filePath("diagnostics.json"), {}));
+    QFile report(diagnostics.filePath("diagnostics.json"));
+    CHECK(report.open(QIODevice::ReadOnly));
+    const QByteArray reportData = report.readAll();
+    CHECK(!reportData.contains(originalCode.toUtf8()) && !reportData.contains(originalUrl.toUtf8()));
     const QByteArray host = "127.0.0.1:" + QByteArray::number(port);
     auto request = [&] {
         QNetworkRequest result(QUrl("ws://" + QString::fromLatin1(host) + "/bridge"));
@@ -155,6 +180,7 @@ int main(int argc, char** argv)
     bridge.regeneratePairing();
     CHECK(!bridge.isConnected() && released(bridge));
     CHECK(bridge.pairingUrl() != originalUrl);
+    CHECK(qrLabel->pixmap(Qt::ReturnByValue).cacheKey() != originalQr);
     CHECK(bridge.connectedClientLabel().isEmpty());
 
     QWebSocket stale;
@@ -187,6 +213,8 @@ int main(int argc, char** argv)
     CHECK(open(pending));
     bridge.stop();
     CHECK(bridge.pairingCode().isEmpty() && bridge.pairingUrl().isEmpty());
+    CHECK(QMetaObject::invokeMethod(&dialog, "updateUi", Qt::DirectConnection));
+    CHECK(qrLabel->pixmap(Qt::ReturnByValue).isNull());
     auth(pending, originalCode);
     CHECK(waitUntil([&] { return pending.state() == QAbstractSocket::UnconnectedState; }));
     CHECK(!bridge.isConnected() && released(bridge));

@@ -17,7 +17,7 @@ if(BUILD_TESTING)
     endforeach()
 
     find_package(QT NAMES Qt6 Qt5 COMPONENTS Core Gui Network WebSockets REQUIRED)
-    find_package(Qt${QT_VERSION_MAJOR} COMPONENTS Core Gui Widgets Network WebSockets REQUIRED)
+    find_package(Qt${QT_VERSION_MAJOR} COMPONENTS Core Concurrent Gui Widgets Network WebSockets REQUIRED)
     add_executable(phone_protocol_test phone_protocol_test.cpp ../src/frontend/qt_sdl/PhoneSecurity.cpp)
     target_include_directories(phone_protocol_test PRIVATE ../src)
     target_link_libraries(phone_protocol_test PRIVATE Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Gui Qt${QT_VERSION_MAJOR}::Network)
@@ -31,13 +31,15 @@ if(BUILD_TESTING)
     add_executable(phone_bridge_test phone_bridge_test.cpp phone_test_services.cpp
         ../src/frontend/qt_sdl/PhoneBridge.cpp ../src/frontend/qt_sdl/PhoneSecurity.cpp
         ../src/frontend/qt_sdl/PhoneLayout.cpp ../src/frontend/qt_sdl/PhoneFirewall.cpp
+        ../src/frontend/qt_sdl/PhoneScreenDialog.cpp ../src/frontend/qt_sdl/PhoneLayoutDialog.cpp
+        ../src/frontend/qt_sdl/qrcodegen/qrcodegen.cpp
         ../src/frontend/qt_sdl/phone/phone.qrc)
     set_target_properties(phone_bridge_test PROPERTIES AUTOMOC ON AUTORCC ON)
     target_include_directories(phone_bridge_test PRIVATE ../src ../src/net ../src/frontend ../src/frontend/qt_sdl)
     target_link_libraries(phone_bridge_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets
-        Qt${QT_VERSION_MAJOR}::Network Qt${QT_VERSION_MAJOR}::WebSockets)
+        Qt${QT_VERSION_MAJOR}::Concurrent Qt${QT_VERSION_MAJOR}::Network Qt${QT_VERSION_MAJOR}::WebSockets)
     add_test(NAME phone_bridge COMMAND phone_bridge_test)
-    set_tests_properties(phone_bridge PROPERTIES TIMEOUT 20)
+    set_tests_properties(phone_bridge PROPERTIES TIMEOUT 20 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
     find_program(NODE_EXECUTABLE node)
     if(NODE_EXECUTABLE)

@@ -124,7 +124,7 @@ PhoneScreenDialog::PhoneScreenDialog(PhoneBridgeManager* manager, bool startup, 
     form->addRow("IPv4 interface", interfaceRow);
     port = new QSpinBox;
     port->setRange(1024, 65534);
-    port->setToolTip("The web page uses this port; WebSocket control uses the next port.");
+    port->setToolTip("The web page, video, and controls share this TCP port.");
     form->addRow("Base port", port);
     quality = new QSpinBox;
     quality->setRange(30, 100);
@@ -326,15 +326,18 @@ void PhoneScreenDialog::startOrArm()
 
 void PhoneScreenDialog::checkFirewall()
 {
-    if (!manager || !manager->isListening()) return;
+    if (!manager || !manager->isListening() || firewallChecked) return;
     firewallChecked = true;
     const PhoneBridgeSettings settings = manager->settings();
     auto watcher = new QFutureWatcher<PhoneFirewallResult>(this);
-    connect(watcher, &QFutureWatcher<PhoneFirewallResult>::finished, this, [this, watcher]
+    connect(watcher, &QFutureWatcher<PhoneFirewallResult>::finished, this, [this, watcher, settings]
     {
         const PhoneFirewallResult firewall = watcher->result();
         watcher->deleteLater();
         if (!manager || !manager->isListening()) return;
+        const auto current = manager->settings();
+        if (current.address != settings.address || current.basePort != settings.basePort) return;
+        firewallResult = firewall;
         if (firewall.detected && firewall.status == PhoneFirewallStatus::Blocked)
             QMessageBox::information(this, "Firewall may block phone connection",
                 firewall.guidance + "\n\nFirewall detection is advisory and cannot prove whether the phone can reach this computer.");
@@ -363,7 +366,11 @@ void PhoneScreenDialog::updateUi()
     const bool listening = manager && manager->isListening();
     const bool connected = manager && manager->isConnected();
     if (listening && !firewallChecked) checkFirewall();
-    if (!listening) firewallChecked = false;
+    if (!listening)
+    {
+        firewallChecked = false;
+        firewallResult = {};
+    }
     if (startup)
         status->setText(requestedForSession.load() ? "Armed — starts after Start melonDS" : "Off");
     else
@@ -371,8 +378,13 @@ void PhoneScreenDialog::updateUi()
     const QString host = interfaceBox->currentData().toString();
     address->setText(host.isEmpty() ? "Unavailable" : QString("http://%1:%2/").arg(host).arg(port->value()));
     const QString pairUrl = listening ? manager->pairingUrl() : QString();
-    pairingQr->setPixmap(pairUrl.isEmpty() ? QPixmap() : pairingQrCode(pairUrl));
-    pairingQr->setText(pairUrl.isEmpty() ? "Start the server to create a pairing code." : QString());
+    if (pairUrl != displayedPairingUrl)
+    {
+        displayedPairingUrl = pairUrl;
+        // QLabel::setText clears a pixmap, even when the new text is empty.
+        if (pairUrl.isEmpty()) pairingQr->setText("Start the server to create a pairing code.");
+        else pairingQr->setPixmap(pairingQrCode(pairUrl));
+    }
     pairingCode->setText(listening ? manager->pairingCode() : QStringLiteral("—"));
     connectedClient->setText(connected ? manager->connectedClientLabel() : QStringLiteral("None"));
     startButton->setEnabled(!host.isEmpty() && (startup ? !requestedForSession.load() : !listening));
@@ -415,7 +427,7 @@ void PhoneScreenDialog::exportDiagnostics()
                                                        "widemelon-phone-diagnostics.json", "JSON (*.json)");
     if (path.isEmpty()) return;
     QString error;
-    if (!manager->exportDiagnostics(path, &error)) QMessageBox::critical(this, "Export failed", error);
+    if (!manager->exportDiagnostics(path, firewallResult, &error)) QMessageBox::critical(this, "Export failed", error);
 }
 
 namespace WideMelon
