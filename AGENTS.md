@@ -1,40 +1,37 @@
 # WideMelon agent guide
 
-WideMelon is a small C++17/CMake project built around a pinned melonDS checkout. The outer repository contains the build recipe, the WideMelon patch, a launcher, and renderer tests. Read `README.md` and `THIRD_PARTY.md` before changing the project. Read `projects/melonDS/BUILD.md` when working on the upstream build.
+WideMelon is a C++17/CMake derivative of melonDS. The repository contains the complete modified emulator source and retains melonDS Git ancestry. Read `README.md`, `THIRD_PARTY.md`, and `BUILD.md` before changing the project.
 
 ## Repository shape
 
-- `patches/melonds-widemelon.patch` is the durable record of WideMelon's engine and Qt changes.
-- `scripts/build.sh` creates the ignored dependency checkouts, applies the patch, builds melonDS, builds the tests, and runs them.
-- `scripts/export-patch.py` exports local changes from `projects/melonDS/src/` back into the patch.
+- `src/` is the durable source of truth for both inherited melonDS code and WideMelon changes.
+- `scripts/build.sh` creates pinned dependency checkouts under `.deps/`, builds WideMelon, builds the tests, and runs them.
 - `scripts/package-source.sh` creates the complete corresponding-source archive required for binary releases.
-- `projects/melonDS/` is an ignored, nested git checkout of the pinned upstream commit.
-- `tools/` contains ignored local dependency checkouts and installs.
+- `.deps/` contains ignored local dependency checkouts, builds, and installs.
 - `tests/profile_test.cpp` tests the viewport profile and projection math.
 - `widemelon` is only a small launcher for `build/widemelon`; it is not a second application.
 
 Do not commit generated build directories, dependency checkouts, ROMs, BIOS or firmware files, saves, captures, or game assets. The project must remain redistributable without copyrighted game material.
 
-## Source-of-truth workflow
+## Source and upstream workflow
 
 When changing the engine or native configuration:
 
-1. Run `./scripts/build.sh` if the ignored upstream checkout or dependencies are missing.
-2. Make changes in `projects/melonDS/src/`.
-3. Build and test the result.
-4. Run `python3 scripts/export-patch.py` to regenerate `patches/melonds-widemelon.patch`.
-5. Review the outer-repository diff and confirm the patch applies cleanly to the pinned upstream commit.
+1. Make changes directly in `src/` and the related frontend, build, test, or documentation files.
+2. Run the focused tests while iterating.
+3. Run `./scripts/build.sh` before committing engine, shader, Qt, dependency, or packaging changes.
+4. Review the ordinary Git diff and keep WideMelon-specific changes in focused commits.
 
-Do not hand-edit the generated patch. Do not commit changes only inside `projects/melonDS`; they disappear when that ignored checkout is recreated. Keep the melonDS commit pinned unless intentionally updating the upstream base. If the base changes, update the patch, `README.md`, `THIRD_PARTY.md`, and the documented commit together.
-
-Keep the outer repository and the nested upstream checkout separate when checking status or reviewing changes:
+The canonical upstream remote is `https://github.com/melonDS-emu/melonDS.git`. Upstream updates must be explicit merges on a dedicated branch:
 
 ```sh
-git status --short
-git -C projects/melonDS status --short
+git remote add upstream https://github.com/melonDS-emu/melonDS.git
+git fetch upstream
+git switch -c update-melonds
+git merge upstream/master
 ```
 
-Do not reset, delete, or recreate the nested checkout to resolve a patch conflict until its local changes and the pinned commit have been inspected.
+Resolve conflicts in the actual source files, then run the complete build and manual renderer/frontend checks. Do not treat a clean merge as proof that renderer behavior remains correct.
 
 ## Renderer invariants
 
@@ -77,7 +74,7 @@ The startup UI should use the existing native Qt controls and melonDS configurat
 For changes to tests or profile math, the focused loop is:
 
 ```sh
-cmake -S . -B build/tests -G Ninja
+cmake -S tests -B build/tests -G Ninja
 cmake --build build/tests
 ctest --test-dir build/tests --output-on-failure
 ```
@@ -98,7 +95,7 @@ The automated tests do not contain a ROM and cannot prove game compatibility, sh
 
 ## Git and changes
 
-- Keep unrelated work untouched in both the outer repository and the nested upstream checkout.
-- Review generated patch changes before committing.
+- Keep unrelated work untouched.
+- Preserve upstream copyright and license notices. Mark new WideMelon-owned files GPL-3.0-or-later.
 - Keep documentation, dependency pins, license notes, and test commands aligned with the implementation.
 - Use the repository's existing commit conventions when commits are requested or part of the workflow.

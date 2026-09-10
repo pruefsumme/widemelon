@@ -99,7 +99,7 @@ On Ubuntu 24.04, install the build tools and libraries:
 sudo apt update
 sudo apt install build-essential cmake ninja-build git pkg-config \
   extra-cmake-modules libcurl4-gnutls-dev libpcap0.8-dev libsdl2-dev \
-  libarchive-dev libenet-dev libzstd-dev libfaad-dev libegl1-mesa-dev \
+  libarchive-dev libzstd-dev libegl1-mesa-dev \
   libgl1-mesa-dev libwayland-dev qt6-base-dev qt6-base-private-dev \
   qt6-multimedia-dev libqt6svg6-dev qt6-websockets-dev
 ```
@@ -111,8 +111,8 @@ Then build and run:
 ./widemelon
 ```
 
-The build script fetches the pinned melonDS source and dependencies, applies
-the WideMelon patch, builds everything, and runs the automated tests.
+The build script fetches WideMelon's pinned FAAD2 and ENet dependencies,
+builds the checked-in emulator source, and runs the automated tests.
 
 ## Technical overview
 
@@ -149,16 +149,20 @@ WIDEMELON_PHONE_LOG_LEVEL=debug WIDEMELON_PHONE_LOG_FILE=1 ./widemelon
 
 ## Development
 
-The durable engine and Qt changes live in
-[`patches/melonds-widemelon.patch`](patches/melonds-widemelon.patch). The
-generated upstream checkout under `projects/` is intentionally ignored.
+WideMelon is maintained as a standalone repository with melonDS ancestry. The
+actual modified emulator source is checked in under `src/`; there is no patch
+generation step or nested source checkout.
 
-After editing `projects/melonDS/src/`, export and verify the patch with:
+Build and test changes with:
 
 ```sh
-python3 scripts/export-patch.py
 ./scripts/build.sh
 ```
+
+Maintainers can add `https://github.com/melonDS-emu/melonDS.git` as an
+`upstream` remote and merge selected upstream commits on a dedicated update
+branch. Upstream updates are never automatic and must pass the full renderer,
+frontend, and packaging verification described in `CONTRIBUTING.md`.
 
 Automated or headless runs can supply a profile through environment variables:
 
@@ -167,8 +171,9 @@ WIDEMELON_VIEW_WIDTH=448 WIDEMELON_SCALE=4 \
   ./build/widemelon /path/to/game.nds
 ```
 
-The patch is based on melonDS commit
-`906e9ebb27da8c6a715cd7abab4abfe8a8d29427`.
+WideMelon's source history is based on melonDS commit
+`906e9ebb27da8c6a715cd7abab4abfe8a8d29427`; later upstream merges remain
+visible in Git history.
 
 For a tagged binary release, commit the release state and create its matching
 complete source archive:

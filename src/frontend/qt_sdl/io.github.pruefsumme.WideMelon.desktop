@@ -1,0 +1,13 @@
+# Copyright (C) 2026 WideMelon contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Desktop Entry]
+Name=WideMelon
+GenericName=Nintendo DS Emulator
+Comment=Experimental widescreen Nintendo DS emulator based on melonDS
+Exec=widemelon %f
+Type=Application
+Categories=Game;Emulator;
+Terminal=false
+Icon=io.github.pruefsumme.WideMelon
+MimeType=application/x-nintendo-ds-rom;
+Keywords=emulator;Nintendo;DS;NDS;Nintendo DS;widescreen;

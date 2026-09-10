@@ -1,3 +1,6 @@
+// Copyright (C) 2026 WideMelon contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "frontend/qt_sdl/PhoneProtocol.h"
 
 #include <cstring>

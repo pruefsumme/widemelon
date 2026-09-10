@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright (C) 2026 WideMelon contributors -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<component type="desktop-application">
+  <id>io.github.pruefsumme.WideMelon</id>
+  <name>WideMelon</name>
+  <summary>Experimental widescreen Nintendo DS emulator</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <developer id="io.github.pruefsumme">
+    <name>WideMelon contributors</name>
+  </developer>
+  <launchable type="desktop-id">io.github.pruefsumme.WideMelon.desktop</launchable>
+  <content_rating type="oars-1.1"/>
+  <description>
+    <p>WideMelon is an experimental widescreen build based on melonDS. It expands submitted 3D scenes while preserving native 2D proportions.</p>
+  </description>
+  <url type="homepage">https://github.com/pruefsumme/widemelon</url>
+  <url type="vcs-browser">https://github.com/pruefsumme/widemelon</url>
+  <provides>
+    <binary>widemelon</binary>
+  </provides>
+</component>

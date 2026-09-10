@@ -1,0 +1,70 @@
+/*
+    Copyright 2016-2026 melonDS team
+
+    This file is part of melonDS.
+
+    melonDS is free software: you can redistribute it and/or modify it under
+    the terms of the GNU General Public License as published by the Free
+    Software Foundation, either version 3 of the License, or (at your option)
+    any later version.
+
+    melonDS is distributed in the hope that it will be useful, but WITHOUT ANY
+    WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+    FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License along
+    with melonDS. If not, see http://www.gnu.org/licenses/.
+*/
+
+#ifndef MAIN_SHADERS_H
+#define MAIN_SHADERS_H
+
+const char* kScreenVS = R"(#version 140
+
+uniform vec2 uScreenSize;
+uniform mat2x3 uTransform;
+
+in vec2 vPosition;
+in vec3 vTexcoord;
+
+smooth out vec3 fTexcoord;
+
+void main()
+{
+    vec4 fpos;
+
+    fpos.xy = vec3(vPosition, 1.0) * uTransform;
+
+    fpos.xy = ((fpos.xy * 2.0) / uScreenSize) - 1.0;
+    fpos.y *= -1;
+    fpos.z = 0.0;
+    fpos.w = 1.0;
+
+    gl_Position = fpos;
+    fTexcoord = vTexcoord;
+}
+)";
+
+const char* kScreenFS = R"(#version 140
+
+uniform sampler2DArray ScreenTex;
+
+smooth in vec3 fTexcoord;
+
+out vec4 oColor;
+
+void main()
+{
+    vec3 coord = fTexcoord;
+    // The physical touchscreen stays 4:3 and samples the center of its texture.
+    if (coord.z > 0.5) {
+        vec3 size = vec3(textureSize(ScreenTex, 0));
+        coord.x = (coord.x - 0.5) * (size.y * (256.0 / 192.0)) / size.x + 0.5;
+    }
+    vec4 pixel = texture(ScreenTex, coord);
+
+    oColor = vec4(pixel.rgb, 1.0);
+}
+)";
+
+#endif // MAIN_SHADERS_H

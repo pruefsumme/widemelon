@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright (C) 2026 WideMelon contributors -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="313.2019"
+     viewBox="0 0 300 313.2019">
+  <g fill="none" stroke="#20242a" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="35" y="5" width="230" height="138" rx="14" stroke-width="4"/>
+    <rect x="62" y="23" width="176" height="104" rx="4" stroke-width="3"/>
+    <circle cx="48" cy="74" r="3" fill="#20242a" stroke="none"/>
+    <circle cx="252" cy="74" r="3" fill="#20242a" stroke="none"/>
+    <path d="M45 143 H255" stroke-width="6"/>
+    <path d="M72 143 V151 M228 143 V151" stroke-width="8"/>
+    <rect x="35" y="151" width="230" height="157" rx="14" stroke-width="4"/>
+    <rect x="72" y="169" width="156" height="104" rx="4" stroke-width="3"/>
+    <path d="M51 206 H65 M58 199 V213" stroke-width="7"/>
+    <circle cx="246" cy="200" r="6" stroke-width="3"/>
+    <circle cx="234" cy="214" r="6" stroke-width="3"/>
+    <circle cx="246" cy="228" r="6" stroke-width="3"/>
+    <circle cx="258" cy="214" r="6" stroke-width="3"/>
+    <rect x="116" y="286" width="25" height="5" rx="2.5" stroke-width="2"/>
+    <rect x="159" y="286" width="25" height="5" rx="2.5" stroke-width="2"/>
+    <circle cx="58" cy="286" r="3" fill="#20242a" stroke="none"/>
+    <path d="M242 283 l3 6 h-6 z" fill="#20242a" stroke="none"/>
+  </g>
+</svg>

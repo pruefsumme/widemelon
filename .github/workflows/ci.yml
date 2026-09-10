@@ -23,9 +23,10 @@ jobs:
           sudo apt-get install --no-install-recommends \
             build-essential cmake ninja-build git pkg-config \
             extra-cmake-modules libcurl4-gnutls-dev libpcap0.8-dev \
-            libsdl2-dev libarchive-dev libenet-dev libzstd-dev libfaad-dev \
+            libsdl2-dev libarchive-dev libzstd-dev \
             libegl1-mesa-dev libgl1-mesa-dev libwayland-dev \
-            qt6-base-dev qt6-base-private-dev qt6-multimedia-dev libqt6svg6-dev
+            qt6-base-dev qt6-base-private-dev qt6-multimedia-dev libqt6svg6-dev \
+            qt6-websockets-dev
 
       - name: Build and test
         run: ./scripts/build.sh

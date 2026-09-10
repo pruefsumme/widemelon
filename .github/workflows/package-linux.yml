@@ -13,7 +13,7 @@ jobs:
   appimage:
     name: AppImage
     runs-on: ubuntu-22.04
-    timeout-minutes: 30
+    timeout-minutes: 60
 
     steps:
       - name: Check out source
@@ -34,10 +34,20 @@ jobs:
           sudo apt-get install --no-install-recommends \
             build-essential cmake ninja-build git pkg-config wget xauth xvfb \
             extra-cmake-modules libcurl4-gnutls-dev libpcap0.8-dev \
-            libsdl2-dev libarchive-dev libenet-dev libzstd-dev libfaad-dev \
+            libsdl2-dev libarchive-dev libzstd-dev \
             libegl1-mesa-dev libgl1-mesa-dev libwayland-dev libfuse2 \
             qtbase5-dev qtbase5-private-dev qtmultimedia5-dev \
             libqt5svg5-dev libqt5websockets5-dev qtwayland5
+
+      - name: Enable matching source packages
+        run: |
+          if [[ -f /etc/apt/sources.list.d/ubuntu.sources ]]; then
+            sudo sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/ubuntu.sources
+          else
+            grep '^deb ' /etc/apt/sources.list | sed 's/^deb /deb-src /' | \
+              sudo tee /etc/apt/sources.list.d/widemelon-source.list >/dev/null
+          fi
+          sudo apt-get update
 
       - name: Build and test
         env:
@@ -45,14 +55,11 @@ jobs:
         run: ./scripts/build.sh
 
       - name: Generate complete source archive
-        run: |
-          git clone --depth 1 --branch 2.11.2 https://github.com/knik0/faad2.git tools/faad2
-          git clone --depth 1 --branch v1.3.18 https://github.com/lsalzman/enet.git tools/enet
-          ./scripts/package-source.sh "$VERSION"
+        run: ./scripts/package-source.sh "$VERSION"
 
       - name: Stage application
         run: |
-          cmake -S projects/melonDS -B build -G Ninja \
+          cmake -S . -B build -G Ninja \
             -DCMAKE_INSTALL_PREFIX=/usr -DENABLE_LTO_RELEASE=OFF -DUSE_QT6=OFF
           DESTDIR="$GITHUB_WORKSPACE/build/AppDir" cmake --install build
           for size in 16 32 48 64 128 256; do
@@ -79,6 +86,18 @@ jobs:
             --appdir build/AppDir --plugin qt --output appimage
           xvfb-run -a "$LDAI_OUTPUT" --appimage-extract-and-run --help
 
+      - name: Archive bundled-library sources
+        run: ./scripts/package-third-party-source.sh "$VERSION" build/AppDir
+
+      - name: Write checksums
+        run: |
+          cd dist
+          sha256sum \
+            "WideMelon-${VERSION}-x86_64.AppImage" \
+            "widemelon-${VERSION}-source.tar.xz" \
+            "widemelon-${VERSION}-third-party-source.tar.xz" \
+            > SHA256SUMS
+
       - name: Upload packages
         uses: actions/upload-artifact@v7
         with:
@@ -86,6 +105,8 @@ jobs:
           path: |
             dist/WideMelon-${{ env.VERSION }}-x86_64.AppImage
             dist/widemelon-${{ env.VERSION }}-source.tar.xz
+            dist/widemelon-${{ env.VERSION }}-third-party-source.tar.xz
+            dist/SHA256SUMS
           if-no-files-found: error
 
       - name: Publish tagged release
@@ -96,4 +117,6 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             "dist/WideMelon-${VERSION}-x86_64.AppImage" \
             "dist/widemelon-${VERSION}-source.tar.xz" \
+            "dist/widemelon-${VERSION}-third-party-source.tar.xz" \
+            "dist/SHA256SUMS" \
             --verify-tag --generate-notes --title "WideMelon $VERSION"

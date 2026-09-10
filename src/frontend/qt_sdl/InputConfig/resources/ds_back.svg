@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright (C) 2026 WideMelon contributors -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="51" viewBox="0 0 300 51">
+  <g fill="none" stroke="#20242a" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M14 47 Q5 47 5 38 V19 Q5 5 20 5 H280 Q295 5 295 19 V38 Q295 47 286 47 Z"
+          stroke-width="4"/>
+    <path d="M24 5 V22 H94 V5 M206 5 V22 H276 V5" stroke-width="3"/>
+    <path d="M116 12 H184" stroke-width="5"/>
+    <circle cx="105" cy="35" r="3" fill="#20242a" stroke="none"/>
+    <circle cx="195" cy="35" r="3" fill="#20242a" stroke="none"/>
+  </g>
+</svg>

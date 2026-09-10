@@ -1,0 +1,9 @@
+<!-- Copyright (C) 2026 WideMelon contributors -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<RCC>
+  <qresource prefix="/phone">
+    <file>index.html</file>
+    <file>app.js</file>
+    <file>app.css</file>
+  </qresource>
+</RCC>

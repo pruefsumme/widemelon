@@ -1,3 +1,28 @@
+build*/
+.deps/
+dist/
+
+# Disposable checkouts left by WideMelon's former patch-based layout.
+/projects/
+/tools/faad2/
+/tools/enet/
+/tools/local/
+bin
+obj
+*.depend
+*.layout
+*.o
+melon_grc.c
+melon_grc.h
+melon.rc
+cmake-build*
+cmake-build-debug
+compile_commands.json
+.idea
+.cache
+
+*.exe
+
 # User dumps, saves, and captures must never be distributed.
 rom/
 saves/
@@ -8,14 +33,14 @@ captures/
 *.bin
 *.rom
 *.ml[0-9]
-# Local upstream checkouts and tools are recreated by scripts/build.sh.
-projects/
-tools/
-build/
-dist/
-# Ghidra databases and locks are local research state.
-*.gpr
-*.rep/
-*.lock
-*.lock~
-__pycache__/
+
+.DS_Store
+
+.vs
+.vscode
+CMakeFiles
+CMakeCache.txt
+
+freebios/FreeBIOS_Data.h
+freebios/bios*
+freebios/build/

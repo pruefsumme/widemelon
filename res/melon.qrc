@@ -1,0 +1,7 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+	<qresource>
+		<file alias="melon-icon">../assets/icons/widemelon-256.png</file>
+		<file alias="melon-logo">melon384.png</file>
+	</qresource>
+</RCC>
