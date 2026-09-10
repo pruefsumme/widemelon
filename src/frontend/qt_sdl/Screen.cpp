@@ -1009,7 +1009,7 @@ void ScreenPanelGL::initOpenGL()
     }
     glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    if (emuInstance->getPhoneBridge())
+    if (mainWindow->getWindowID() == 0 && emuInstance->getPhoneBridge())
         emuInstance->getPhoneBridge()->setCaptureAvailable(phoneCaptureComplete,
             "OpenGL could not create the phone capture framebuffer; desktop fallback retained");
 
@@ -1072,7 +1072,8 @@ void ScreenPanelGL::deinitOpenGL()
     glContext->MakeCurrent();
 
     glDeleteTextures(1, &screenTexture);
-    if (emuInstance->getPhoneBridge()) emuInstance->getPhoneBridge()->setCaptureAvailable(false);
+    if (mainWindow->getWindowID() == 0 && emuInstance->getPhoneBridge())
+        emuInstance->getPhoneBridge()->setCaptureAvailable(false);
     glDeleteBuffers(2, phoneCapturePBO);
     glDeleteFramebuffers(1, &phoneSourceFramebuffer);
     glDeleteFramebuffers(1, &phoneCaptureFramebuffer);
@@ -1328,7 +1329,14 @@ void ScreenPanelGL::capturePhoneFrame(GLuint sourceTexture, int sourceWidth, int
 {
     PhoneBridgeManager* bridge = emuInstance->getPhoneBridge();
     if (!bridge || !bridge->hasUsableClient() || bridge->testPatternEnabled()
-        || mainWindow->getWindowID() != 0 || sourceTexture == 0) return;
+        || mainWindow->getWindowID() != 0 || sourceTexture == 0)
+    {
+        // Reconnecting or leaving the test pattern must not publish a PBO
+        // captured during the preceding phone session.
+        phoneCapturePrimed = false;
+        phoneFramePacer.reset();
+        return;
+    }
 
     const qint64 now = std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
