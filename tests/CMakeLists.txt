@@ -64,4 +64,12 @@ if(BUILD_TESTING)
     else()
         message(STATUS "Node.js 18+ not found; phone browser regression test is unavailable")
     endif()
+    find_program(CHROMIUM_EXECUTABLE NAMES chromium chromium-browser)
+    if(CHROMIUM_EXECUTABLE AND NODE_EXECUTABLE AND NODE_VERSION VERSION_GREATER_EQUAL 22)
+        add_test(NAME phone_stream_pacing COMMAND ${NODE_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/phone_browser_smoke.js $<TARGET_FILE:phone_bridge_test>
+            ${CHROMIUM_EXECUTABLE} --benchmark --dialog)
+        set_tests_properties(phone_stream_pacing PROPERTIES TIMEOUT 90 RUN_SERIAL TRUE
+            ENVIRONMENT "WIDEMELON_BENCH_QUALITY=100")
+    endif()
 endif()

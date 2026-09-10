@@ -134,6 +134,16 @@ the production bridge while streaming a generated test pattern; no ROM is needed
 node tests/phone_browser_smoke.js build/tests/phone_bridge_test /usr/bin/chromium
 ```
 
+Add `--benchmark --dialog` to measure sustained streaming during idle, continuous
+touch, and simultaneous button holds, with the settings dialog open. The test
+reports per-stage FPS and decode/delivery timing and fails below 28.5 displayed
+FPS. CTest includes this benchmark when Chromium and Node.js 22+ are installed.
+For a browser-only A/B comparison, set `WIDEMELON_BENCH_REVISION` to a commit hash;
+the test substitutes that revision's browser script while keeping the same bridge.
+`WIDEMELON_BENCH_QUALITY=100` and `WIDEMELON_BENCH_CPU=8` select JPEG quality and
+Chromium CPU throttling for controlled comparisons. These synthetic/loopback
+measurements do not prove Wi-Fi performance or gameplay GPU capture performance.
+
 ## Technical overview
 
 A Nintendo DS screen is normally 256 × 192 pixels. WideMelon creates a wider
