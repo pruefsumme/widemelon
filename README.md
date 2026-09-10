@@ -20,12 +20,21 @@ instead of being stretched.
 ## Download
 
 Get Windows x64, macOS (Apple Silicon or Intel), and Linux x64 builds from the
-[Releases page](https://github.com/pruefsumme/widemelon/releases). Extract the
-Windows ZIP and open `widemelon.exe`; on macOS, move `WideMelon.app` to
-Applications; on Linux, mark the AppImage executable and open it. The release
-notes include system requirements and first-run instructions. Development
-builds are available from the
+[Releases page](https://github.com/pruefsumme/widemelon/releases). On Windows,
+extract the ZIP and open `widemelon.exe`. On macOS, download the ZIP for your
+CPU, open it, move the contained `WideMelon.app` to Applications, and open it
+from there. The release ZIP contains the application only; dependency-source
+archives are published separately for license compliance. On Linux, mark the
+AppImage executable and open it. The release notes include system requirements
+and first-run instructions. Development builds are available from the
 [Release workflow](https://github.com/pruefsumme/widemelon/actions/workflows/release.yml).
+
+macOS releases are ad-hoc signed unless optional Developer ID credentials are
+configured. They may require the one-time **Open** confirmation in macOS
+Privacy & Security; only approve a download obtained from this repository. For
+branch, manual, or ad-hoc release artifacts, choose the one ending in
+`-application`; it contains `WideMelon.app` without the separate
+dependency-source archive.
 
 ## Play
 

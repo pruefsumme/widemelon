@@ -244,7 +244,7 @@ endif()
 
 if (APPLE)
     # Copy icon into the bundle
-    set(RESOURCE_FILES "${CMAKE_SOURCE_DIR}/res/melon.icns")
+    set(RESOURCE_FILES "${CMAKE_SOURCE_DIR}/res/widemelon.icns")
     target_sources(melonDS PUBLIC "${RESOURCE_FILES}")
 
     set_target_properties(melonDS PROPERTIES

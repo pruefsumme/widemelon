@@ -20,11 +20,11 @@ The first WideMelon release for Windows, macOS, and Linux.
 | macOS 13+, Intel | `WideMelon-1.0.0-macos-x86_64.zip` | Extract and move `WideMelon.app` to Applications. |
 | Linux x64, Ubuntu 22.04 or newer equivalent | `WideMelon-1.0.0-x86_64.AppImage` | Mark executable and open it. |
 
-The Windows build is unsigned. macOS apps are ad-hoc signed, without Apple
-notarization; macOS may require approval in Privacy & Security after the first
-open attempt. Only approve a download obtained from this repository's release.
-Linux needs an OpenGL-capable graphics driver and FUSE 2, or can run the image
-with `--appimage-extract-and-run`.
+The Windows build is unsigned. macOS apps are ad-hoc signed unless optional
+Developer ID credentials are configured, so macOS may require a one-time
+approval in Privacy & Security. Only approve a download obtained from this
+repository. Linux needs an OpenGL-capable graphics driver and FUSE 2, or can
+run the image with `--appimage-extract-and-run`.
 
 ## Compatibility and limitations
 

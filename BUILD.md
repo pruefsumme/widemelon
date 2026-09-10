@@ -109,17 +109,27 @@ The native packaging command, after building and testing on that host, is:
 python scripts/package-native.py 1.0.0 macos-arm64 arm64-osx-13-release
 ```
 
-Use the matching platform/triplet for Windows or Intel macOS. Keep the vcpkg
-download cache: it is the source input for the dependency archive. Native
-release CI disables separate binary caching and restores installed libraries
-only together with their downloaded sources. The archive includes pinned
-vcpkg recipes and patches, original source downloads, package versions, and
-the application commit. See `SOURCE.md` for rebuilding from those archives.
+Use the matching platform/triplet for Windows or Intel macOS. On macOS, this
+creates both `dist/WideMelon.app` and the release ZIP; the former is the direct
+application artifact exposed by the development workflow. The ZIP contains
+only `WideMelon.app`. The dependency-source archive is a separate artifact and
+release asset. Keep the vcpkg download cache: it is the source input for that
+archive. Native release CI disables separate binary caching and restores
+installed libraries only together with their downloaded sources. The archive
+includes pinned vcpkg recipes and patches, original source downloads, package
+versions, and the application commit. See `SOURCE.md` for rebuilding from those
+archives.
 
-macOS apps are ad-hoc signed; no signing identity or notarization credentials
-are configured. Windows executables are unsigned. Native packages include
-licenses and source access instructions. Never add ROMs, BIOS/firmware dumps,
-saves, game assets, or generated build directories to a release.
+Developer ID signing and notarization are optional. To enable them, provide all
+six GitHub Actions secrets: `MACOS_CERTIFICATE_P12` (base64-encoded Developer
+ID Application certificate), `MACOS_CERTIFICATE_PASSWORD`,
+`MACOS_SIGNING_IDENTITY`, `MACOS_NOTARY_KEY_ID`, `MACOS_NOTARY_ISSUER_ID`, and
+`MACOS_NOTARY_PRIVATE_KEY` (the App Store Connect API key in `.p8` format).
+Without those secrets, branch, manual, and tagged macOS runs publish an
+ad-hoc-signed bundle that may require a one-time Open confirmation. Windows
+executables remain unsigned. Native packages include licenses and source access
+instructions. Never add ROMs, BIOS/firmware dumps, saves, game assets, or
+generated build directories to a release.
 
 Automated tests cannot prove gameplay, GPU output, or behavior on every driver.
 Before publishing, smoke-test the native setup dialog, ROM selection, 4:3 and

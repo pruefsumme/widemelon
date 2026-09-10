@@ -70,11 +70,32 @@ def main():
         (docs / "build-info.json").write_text(json.dumps(provenance, indent=2) + "\n")
         shutil.copy2(installed / "vcpkg/status", docs / "dependency-versions.txt")
         if mac:
+            # Keep a plain app bundle in dist as well as the release archive.
+            # This lets Actions expose a directly usable WideMelon.app instead
+            # of making users unpack an artifact containing two unrelated
+            # archives.
+            application = dist / "WideMelon.app"
+            archive_path = dist / f"{name}.zip"
+            if application.exists():
+                if application.is_dir() and not application.is_symlink():
+                    shutil.rmtree(application)
+                else:
+                    application.unlink()
+            if archive_path.exists():
+                archive_path.unlink()
+            shutil.copytree(app, application, symlinks=True)
+            app = application
+
             executable = app / "Contents/MacOS/WideMelon"
             with (app / "Contents/Info.plist").open("rb") as stream:
                 info = plistlib.load(stream)
             if info["CFBundleExecutable"] != executable.name or not executable.is_file():
                 raise RuntimeError("Bundle executable does not match its Info.plist")
+            if info.get("CFBundleIconFile") != "widemelon.icns":
+                raise RuntimeError("Bundle does not contain the WideMelon macOS icon")
+            icon = app / "Contents/Resources/widemelon.icns"
+            if not icon.is_file():
+                raise RuntimeError("Bundle does not contain the WideMelon macOS icon")
             for document in info["CFBundleDocumentTypes"]:
                 if not all(isinstance(ext, str) for ext in document["CFBundleTypeExtensions"]):
                     raise RuntimeError("Invalid file association in Info.plist")
@@ -83,9 +104,15 @@ def main():
                 library = line.strip().split(" (", 1)[0]
                 if not library.startswith(("/usr/lib/", "/System/Library/")):
                     raise RuntimeError(f"Non-system dependency in static bundle: {library}")
-            run("codesign", "--force", "--deep", "--sign", "-", str(app))
+
+            signing_identity = os.environ.get("WIDEMELON_MACOS_SIGNING_IDENTITY", "").strip() or "-"
+            sign_command = ["codesign", "--force", "--deep"]
+            if signing_identity != "-":
+                sign_command.extend(["--options", "runtime", "--timestamp"])
+            sign_command.extend(["--sign", signing_identity, str(app)])
+            run(*sign_command)
             run("codesign", "--verify", "--deep", "--strict", str(app))
-            run("ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", str(app), str(dist / f"{name}.zip"))
+            run("ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", str(app), str(archive_path))
         else:
             with zipfile.ZipFile(dist / f"{name}.zip", "w", zipfile.ZIP_DEFLATED) as archive:
                 for file in sorted(stage.rglob("*")):

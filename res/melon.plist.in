@@ -7,7 +7,7 @@
     <key>CFBundleName</key>
     <string>WideMelon</string>
     <key>CFBundleIconFile</key>
-    <string>melon.icns</string>
+    <string>widemelon.icns</string>
     <key>CFBundleIdentifier</key>
     <string>io.github.pruefsumme.WideMelon</string>
     <key>CFBundleDevelopmentRegion</key>

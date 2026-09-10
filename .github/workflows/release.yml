@@ -85,6 +85,61 @@ jobs:
       - name: Install macOS build tools
         if: runner.os == 'macOS'
         run: brew install autoconf automake autoconf-archive libtool ninja pkg-config
+      - name: Validate macOS distribution credentials
+        if: startsWith(matrix.platform, 'macos-')
+        env:
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          MACOS_NOTARY_PRIVATE_KEY: ${{ secrets.MACOS_NOTARY_PRIVATE_KEY }}
+        run: |
+          signing_count=0
+          [[ -n "$MACOS_CERTIFICATE_P12" ]] && signing_count=$((signing_count + 1))
+          [[ -n "$MACOS_CERTIFICATE_PASSWORD" ]] && signing_count=$((signing_count + 1))
+          [[ -n "$MACOS_SIGNING_IDENTITY" ]] && signing_count=$((signing_count + 1))
+          if (( signing_count != 0 && signing_count != 3 )); then
+            echo "Set all three macOS signing secrets, or leave all three unset." >&2
+            exit 1
+          fi
+
+          notary_count=0
+          [[ -n "$MACOS_NOTARY_KEY_ID" ]] && notary_count=$((notary_count + 1))
+          [[ -n "$MACOS_NOTARY_ISSUER_ID" ]] && notary_count=$((notary_count + 1))
+          [[ -n "$MACOS_NOTARY_PRIVATE_KEY" ]] && notary_count=$((notary_count + 1))
+          if (( notary_count != 0 && notary_count != 3 )); then
+            echo "Set all three macOS notarization secrets, or leave all three unset." >&2
+            exit 1
+          fi
+          if (( notary_count != 0 && signing_count != 3 )); then
+            echo "Notarization credentials require all three macOS signing secrets." >&2
+            exit 1
+          fi
+
+      - name: Import macOS Developer ID certificate
+        if: startsWith(matrix.platform, 'macos-')
+        env:
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          if [[ -z "$MACOS_CERTIFICATE_P12" ]]; then
+            echo "No Developer ID certificate configured; this development bundle will be ad-hoc signed."
+            exit 0
+          fi
+          certificate_path="$RUNNER_TEMP/widemelon-signing.p12"
+          keychain_path="$RUNNER_TEMP/widemelon-signing.keychain-db"
+          keychain_password=$(uuidgen)
+          printf '%s' "$MACOS_CERTIFICATE_P12" | base64 -D > "$certificate_path"
+          security create-keychain -p "$keychain_password" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$keychain_password" "$keychain_path"
+          security import "$certificate_path" -P "$MACOS_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 "$keychain_path"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$keychain_password" "$keychain_path"
+          security list-keychains -d user -s "$keychain_path"
+          security default-keychain -s "$keychain_path"
       - name: Check out pinned vcpkg
         uses: actions/checkout@v6
         with:
@@ -138,12 +193,62 @@ jobs:
           cmake --build build/tests --parallel 3
           ctest --test-dir build/tests --output-on-failure
       - name: Package application and dependency sources
+        env:
+          WIDEMELON_MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
         run: python scripts/package-native.py "${{ needs.version.outputs.version }}" "${{ matrix.platform }}" "${{ matrix.triplet }}"
-      - name: Upload packages
+      - name: Notarize and staple macOS application
+        if: startsWith(matrix.platform, 'macos-')
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          PLATFORM: ${{ matrix.platform }}
+          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          MACOS_NOTARY_PRIVATE_KEY: ${{ secrets.MACOS_NOTARY_PRIVATE_KEY }}
+        run: |
+          if [[ -z "$MACOS_NOTARY_KEY_ID" ]]; then
+            echo "No notarization credentials configured; retaining the development bundle."
+            exit 0
+          fi
+          key_path="$RUNNER_TEMP/AuthKey_${MACOS_NOTARY_KEY_ID}.p8"
+          archive="dist/WideMelon-${VERSION}-${PLATFORM}.zip"
+          app="dist/WideMelon.app"
+          printf '%s' "$MACOS_NOTARY_PRIVATE_KEY" > "$key_path"
+          xcrun notarytool submit "$archive" \
+            --key "$key_path" --key-id "$MACOS_NOTARY_KEY_ID" \
+            --issuer "$MACOS_NOTARY_ISSUER_ID" --wait
+          xcrun stapler staple "$app"
+          codesign --verify --deep --strict "$app"
+          ditto -c -k --sequesterRsrc --keepParent "$app" "${archive}.tmp"
+          mv -f "${archive}.tmp" "$archive"
+          xcrun stapler validate "$app"
+      - name: Upload macOS application bundle
+        if: startsWith(matrix.platform, 'macos-')
         uses: actions/upload-artifact@v7
         with:
-          name: WideMelon-${{ needs.version.outputs.version }}-${{ matrix.platform }}
-          path: dist/*
+          name: WideMelon-${{ needs.version.outputs.version }}-${{ matrix.platform }}-application
+          path: dist/WideMelon.app
+          if-no-files-found: error
+          compression-level: 0
+      - name: Upload Windows application archive
+        if: matrix.platform == 'windows-x86_64'
+        uses: actions/upload-artifact@v7
+        with:
+          name: WideMelon-${{ needs.version.outputs.version }}-${{ matrix.platform }}-application
+          path: dist/WideMelon-${{ needs.version.outputs.version }}-${{ matrix.platform }}.zip
+          if-no-files-found: error
+          compression-level: 0
+      - name: Upload release application archive
+        uses: actions/upload-artifact@v7
+        with:
+          name: WideMelon-${{ needs.version.outputs.version }}-${{ matrix.platform }}-release
+          path: dist/WideMelon-${{ needs.version.outputs.version }}-${{ matrix.platform }}.zip
+          if-no-files-found: error
+          compression-level: 0
+      - name: Upload dependency source archive
+        uses: actions/upload-artifact@v7
+        with:
+          name: WideMelon-${{ needs.version.outputs.version }}-${{ matrix.platform }}-dependency-source
+          path: dist/widemelon-${{ needs.version.outputs.version }}-${{ matrix.platform }}-dependency-source.tar.gz
           if-no-files-found: error
           compression-level: 0
 
@@ -155,9 +260,21 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/download-artifact@v8
+      - name: Download Linux package artifact
+        uses: actions/download-artifact@v8
         with:
-          pattern: WideMelon-*
+          name: WideMelon-${{ needs.version.outputs.version }}-linux-x86_64
+          path: dist
+      - name: Download native release archives
+        uses: actions/download-artifact@v8
+        with:
+          pattern: WideMelon-*-release
+          path: dist
+          merge-multiple: true
+      - name: Download native dependency sources
+        uses: actions/download-artifact@v8
+        with:
+          pattern: WideMelon-*-dependency-source
           path: dist
           merge-multiple: true
       - name: Verify complete asset set and publish
