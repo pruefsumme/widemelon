@@ -149,9 +149,9 @@ WIDEMELON_PHONE_LOG_LEVEL=debug WIDEMELON_PHONE_LOG_FILE=1 ./widemelon
 
 ## Development
 
-WideMelon is maintained as a standalone repository with melonDS ancestry. The
-actual modified emulator source is checked in under `src/`; there is no patch
-generation step or nested source checkout.
+WideMelon is maintained as a GitHub fork of melonDS. The actual modified
+emulator source is checked in under `src/`; there is no patch generation step
+or nested source checkout.
 
 Build and test changes with:
 
