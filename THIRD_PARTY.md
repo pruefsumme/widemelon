@@ -18,12 +18,9 @@ Pinned source dependencies:
   libraries are linked using the host's development packages. Their respective
   licenses apply.
 
-The Nintendo DS diagrams in melonDS's input configuration are derived from an
-illustration by Dimensions.com and are used with the copyright holder's
-permission for a free, open-source community project. Retain
-`src/frontend/qt_sdl/InputConfig/resources/LICENSE.md` and its backlink to
-https://www.dimensions.com/ in source and binary distributions. Obtain separate
-permission or replace those diagrams before a commercial distribution.
+The input configuration uses original WideMelon schematic controller diagrams
+under GPL-3.0-or-later. They replace melonDS's former Dimensions.com-derived
+artwork and carry no noncommercial restriction.
 
 Pokémon and Nintendo names identify compatibility. WideMelon is an independent
 project and is not affiliated with Nintendo, Game Freak, or The Pokémon Company.

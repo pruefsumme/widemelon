@@ -1,6 +1,12 @@
-These vector images are modified from the [Nintendo DS Lite illustration on dimensions.com](https://www.dimensions.com/element/nintendo-ds-lite).
+# WideMelon input diagrams
 
-These have been used with the permission of the copyright holders.
-> "We restrict the usage of our drawings and 3D models in commercial software, but as long as it's a free and open source community project, that would be approved. Any reference/backlink to Dimensions.com that could be provided in the developer notes and/or credits for the project would be sufficient for use."
+Copyright (C) 2026 WideMelon contributors.
 
-https://www.dimensions.com/legal
+These original, schematic controller diagrams were created for WideMelon.
+They are not derived from the former Dimensions.com illustrations.
+
+SPDX-License-Identifier: GPL-3.0-or-later
+
+They may be redistributed and modified under the GNU General Public License as
+published by the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version. See the repository's top-level `LICENSE`.
