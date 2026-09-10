@@ -1,4 +1,4 @@
-// Exercise the production bridge over real loopback HTTP/WebSocket sockets.
+// Exercise the production bridge over real loopback or selected-LAN HTTP/WebSocket sockets.
 // Copyright (C) 2026 WideMelon contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "frontend/qt_sdl/PhoneBridge.h"
@@ -61,13 +61,17 @@ bool released(const PhoneBridgeManager& bridge)
 int main(int argc, char** argv)
 {
     QApplication application(argc, argv);
+    const QString requestedAddress = qEnvironmentVariable("WIDEMELON_PHONE_TEST_ADDRESS");
+    const bool loopbackTest = requestedAddress.isEmpty();
+    const QHostAddress testAddress = loopbackTest ? QHostAddress::LocalHost : QHostAddress(requestedAddress);
+    CHECK(!testAddress.isNull());
     QTcpServer portReservation;
-    CHECK(portReservation.listen(QHostAddress::LocalHost, 0));
+    CHECK(portReservation.listen(testAddress, 0));
     const quint16 port = portReservation.serverPort();
     portReservation.close();
     PhoneBridgeManager bridge;
     auto settings = bridge.settings();
-    settings.address = "127.0.0.1";
+    settings.address = loopbackTest ? QStringLiteral("127.0.0.1") : requestedAddress;
     settings.basePort = port;
     if (qEnvironmentVariableIsSet("WIDEMELON_BENCH_QUALITY"))
     {
@@ -161,8 +165,9 @@ int main(int argc, char** argv)
     CHECK(wizard && !wizard->isModal());
     firewallGuide->click();
     CHECK(dialog.findChildren<QWizard*>("phoneFirewallGuide").size() == 1);
-    for (QPlainTextEdit* text : wizard->findChildren<QPlainTextEdit*>())
-        CHECK(!text->toPlainText().contains("sudo")); // loopback needs no rule
+    if (loopbackTest)
+        for (QPlainTextEdit* text : wizard->findChildren<QPlainTextEdit*>())
+            CHECK(!text->toPlainText().contains("sudo")); // loopback needs no rule
     if (qEnvironmentVariableIsSet("WIDEMELON_PHONE_FIREWALL_SCREENSHOT"))
     {
         const QString screenshot = qEnvironmentVariable("WIDEMELON_PHONE_FIREWALL_SCREENSHOT");
@@ -180,8 +185,8 @@ int main(int argc, char** argv)
     CHECK(report.open(QIODevice::ReadOnly));
     const QByteArray reportData = report.readAll();
     CHECK(!reportData.contains(originalCode.toUtf8()) && !reportData.contains(originalUrl.toUtf8()));
-    CHECK(!reportData.contains("127.0.0.1"));
-    const QByteArray host = "127.0.0.1:" + QByteArray::number(port);
+    CHECK(!reportData.contains(settings.address.toUtf8()));
+    const QByteArray host = settings.address.toUtf8() + ':' + QByteArray::number(port);
     auto request = [&] {
         QNetworkRequest result(QUrl("ws://" + QString::fromLatin1(host) + "/bridge"));
         result.setRawHeader("Origin", "http://" + host);
@@ -196,7 +201,7 @@ int main(int argc, char** argv)
     };
     auto http = [&](const QByteArray& path, bool head = false) {
         QTcpSocket socket;
-        socket.connectToHost(QHostAddress::LocalHost, port);
+        socket.connectToHost(testAddress, port);
         if (!waitUntil([&] { return socket.state() == QAbstractSocket::ConnectedState; })) return QByteArray();
         socket.write((head ? "HEAD " : "GET ") + path + " HTTP/1.1\r\nHost: " + host + "\r\n\r\n");
         waitUntil([&] { return socket.state() == QAbstractSocket::UnconnectedState; });

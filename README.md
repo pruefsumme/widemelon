@@ -109,6 +109,17 @@ bridge starts. Credentials are held only for that session and also change when
 you revoke pairing or generate a new code. Repeated failures are temporarily
 rate-limited; they never rotate a valid code.
 
+If the page does not open, first check the address label: `this computer only`
+(`127.0.0.0/8`) cannot be reached from a phone, and `possible VPN or virtual
+adapter` may not be reachable from the physical Wi-Fi. Select the private LAN
+address shared with the phone. Both devices must be on the same non-guest
+network/subnet; Wi-Fi client isolation can block them even when both have
+internet access. The advanced bridge log records `Served /` when the phone
+reached the HTTP server, or explains when a peer was rejected for being outside
+the selected subnet. On macOS, the firewall guide also performs a read-only
+check of the Application Firewall and reports whether WideMelon is listed as
+allowed; it never changes firewall settings.
+
 If no private network address is available, join the same Wi-Fi network on both
 devices or create a hotspot with your operating system. WideMelon does not
 change system network settings. Browser screen-wake-lock support normally

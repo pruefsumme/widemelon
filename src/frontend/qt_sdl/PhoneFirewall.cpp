@@ -9,6 +9,12 @@
 #include <QProcess>
 #include <QProcessEnvironment>
 #include <QStandardPaths>
+#include <QStringList>
+#if defined(Q_OS_MACOS) || defined(Q_OS_MAC)
+#include <QCoreApplication>
+#include <QDir>
+#include <QFileInfo>
+#endif
 
 #include "PhoneProtocol.h"
 
@@ -103,8 +109,9 @@ bool IsLikelyVpnInterface(const QString& address)
 {
     const QString name = FindPhoneFirewallNetwork(address).interface.toLower();
     return name.startsWith("tun") || name.startsWith("tap") || name.startsWith("wg")
-        || name.startsWith("ppp") || name.contains("vpn") || name.contains("tailscale")
-        || name.contains("zerotier");
+        || name.startsWith("utun") || name.startsWith("ppp") || name.startsWith("ipsec")
+        || name.startsWith("bridge") || name.contains("vpn") || name.contains("tailscale")
+        || name.contains("zerotier") || name.contains("docker");
 }
 
 PhoneFirewallResult InspectPhoneFirewall(const QString& address, quint16 port)
@@ -145,8 +152,112 @@ PhoneFirewallResult InspectPhoneFirewall(const QString& address, quint16 port)
         result.guidance = "firewalld may be preventing the phone from reaching WideMelon's TCP port.";
     }
 #else
-    Q_UNUSED(address)
     Q_UNUSED(port)
+#if defined(Q_OS_MACOS) || defined(Q_OS_MAC)
+    if (QHostAddress(address).isLoopback()) return result;
+
+    const QString socketFilterFirewall = "/usr/libexec/ApplicationFirewall/socketfilterfw";
+    const ProcessResult state = run(socketFilterFirewall, {"--getglobalstate"});
+    // The application firewall is an app-level gate, not a port rule. An
+    // enabled global state is enough to make an unlisted app a useful suspect;
+    // do not claim that a successful query proves LAN reachability.
+    if (!state.finished || state.exitCode != 0 || !state.output.contains("State = 1")) return result;
+
+    result.detected = true;
+    result.name = "macOS Application Firewall";
+    const ProcessResult apps = run(socketFilterFirewall, {"--listapps"});
+    if (!apps.finished || apps.exitCode != 0)
+    {
+        result.guidance = "macOS Application Firewall is enabled; WideMelon's incoming-connection rule could not "
+            "be checked without administrator access.";
+        return result;
+    }
+
+    const QFileInfo applicationInfo(QCoreApplication::applicationFilePath());
+    const QString executable = applicationInfo.canonicalFilePath().isEmpty()
+        ? applicationInfo.absoluteFilePath() : applicationInfo.canonicalFilePath();
+    QStringList applicationPaths {executable};
+    QDir bundleDirectory(QCoreApplication::applicationDirPath());
+    if (bundleDirectory.cdUp() && bundleDirectory.cdUp() && bundleDirectory.dirName().endsWith(".app"))
+    {
+        const QString bundle = QFileInfo(bundleDirectory.absolutePath()).canonicalFilePath();
+        if (!bundle.isEmpty() && !applicationPaths.contains(bundle)) applicationPaths.append(bundle);
+    }
+
+    const QStringList appLines = QString::fromLocal8Bit(apps.output).split('\n');
+    bool found = false;
+    bool stateKnown = false;
+    bool allowed = false;
+    for (const QString& candidate : applicationPaths)
+    {
+        const QStringList candidateLines = appLines;
+        for (int i = 0; i < candidateLines.size(); i++)
+        {
+            QString line = candidateLines[i].trimmed();
+            const int separator = line.indexOf(": ");
+            if (separator >= 0) line = line.mid(separator + 2).trimmed();
+            if (!line.startsWith(candidate)
+                || (line.size() > candidate.size() && line[candidate.size()] != ' '
+                    && line[candidate.size()] != '(')) continue;
+            found = true;
+            // Current macOS versions also expose a direct query. Prefer it;
+            // the short look-ahead keeps this compatible with older listapps
+            // output where the allow/block state is printed on the next line.
+            const ProcessResult appState = run(socketFilterFirewall, {"--getappblocked", candidate});
+            const QString stateText = QString::fromLocal8Bit(appState.output);
+            if (appState.finished && appState.exitCode == 0
+                && (stateText.contains("permitted", Qt::CaseInsensitive)
+                    || stateText.contains("blocked", Qt::CaseInsensitive)))
+            {
+                stateKnown = true;
+                allowed = stateText.contains("permitted", Qt::CaseInsensitive);
+            }
+            const int lookAheadEnd = std::min(i + 3, int(candidateLines.size()));
+            for (int j = i; !stateKnown && j < lookAheadEnd; j++)
+            {
+                const QString rule = candidateLines[j];
+                if (rule.contains("Allow incoming connections", Qt::CaseInsensitive))
+                {
+                    stateKnown = true;
+                    allowed = true;
+                }
+                else if (rule.contains("Block incoming connections", Qt::CaseInsensitive))
+                {
+                    stateKnown = true;
+                    allowed = false;
+                }
+            }
+            break;
+        }
+        if (found) break;
+    }
+    if (found && stateKnown && allowed)
+    {
+        result.status = PhoneFirewallStatus::Allowed;
+        result.guidance = "macOS Application Firewall is enabled and WideMelon is allowed to accept incoming "
+            "connections. If the phone still cannot open the page, check that both devices share the selected "
+            "private network and that Wi-Fi client isolation is disabled.";
+    }
+    else if (found && stateKnown)
+    {
+        result.status = PhoneFirewallStatus::Blocked;
+        result.guidance = "macOS Application Firewall appears to block WideMelon's incoming connections. In "
+            "System Settings > Network > Firewall > Options, add WideMelon and choose Allow incoming connections.";
+    }
+    else if (found)
+    {
+        result.guidance = "macOS Application Firewall is enabled and WideMelon is listed, but its incoming rule "
+            "could not be classified. Check System Settings > Network > Firewall > Options and choose Allow "
+            "incoming connections for WideMelon.";
+    }
+    else
+    {
+        result.guidance = "macOS Application Firewall is enabled, but WideMelon is not listed as allowed yet. In "
+            "System Settings > Network > Firewall > Options, add WideMelon and choose Allow incoming connections.";
+    }
+#else
+    Q_UNUSED(address)
+#endif
 #endif
     return result;
 }

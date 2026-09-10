@@ -87,7 +87,10 @@ ctest --test-dir build/tests --output-on-failure
 On Windows also pass `-DCMAKE_CXX_COMPILER=clang++` and
 `-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded` when configuring tests. On macOS
 pass `-DCMAKE_OSX_DEPLOYMENT_TARGET=13.0`. The bridge tests use Qt's offscreen
-platform and generated frames; they do not require a ROM.
+platform and generated frames; they do not require a ROM. The normal bridge test
+uses loopback. To exercise the production listener on a real private adapter,
+run it with `WIDEMELON_PHONE_TEST_ADDRESS` set to the host's active IPv4 address;
+the same HTTP, WebSocket, subnet, and pairing checks then run over that address.
 
 ## Release packaging
 
