@@ -18,6 +18,7 @@
 #include <QMutexLocker>
 #include <QNetworkInterface>
 #include <QPainter>
+#include <QRegularExpression>
 #include <QSaveFile>
 #include <QTcpServer>
 #include <QTcpSocket>
@@ -548,10 +549,15 @@ bool PhoneBridgeManager::exportDiagnostics(const QString& path, const PhoneFirew
     root["firewall"] = firewall.status == PhoneFirewallStatus::Allowed ? "allowed"
         : firewall.status == PhoneFirewallStatus::Blocked ? "blocked" : "unknown";
     root["possibleVpnInterface"] = IsLikelyVpnInterface(currentSettings.address);
-    const QStringList lines = logLines();
+    QStringList lines = logLines();
+    // Lifecycle logs contain URLs, including addresses from earlier sessions.
+    // Redact those too, rather than only masking the top-level address field.
+    static const QRegularExpression ipv4("\\b(?:[0-9]{1,3}\\.){3}[0-9]{1,3}\\b");
+    for (QString& line : lines) line.replace(ipv4, "x.x.x.x");
     root["logs"] = QJsonArray::fromStringList(lines.mid(std::max(0, int(lines.size()) - 500)));
     QSaveFile file(path);
-    if (!file.open(QIODevice::WriteOnly) || file.write(QJsonDocument(root).toJson()) < 0 || !file.commit())
+    const QByteArray data = QJsonDocument(root).toJson();
+    if (!file.open(QIODevice::WriteOnly) || file.write(data) != data.size() || !file.commit())
     {
         if (error) *error = file.errorString();
         return false;

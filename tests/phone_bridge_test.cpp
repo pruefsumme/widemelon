@@ -91,6 +91,7 @@ int main(int argc, char** argv)
     CHECK(report.open(QIODevice::ReadOnly));
     const QByteArray reportData = report.readAll();
     CHECK(!reportData.contains(originalCode.toUtf8()) && !reportData.contains(originalUrl.toUtf8()));
+    CHECK(!reportData.contains("127.0.0.1"));
     const QByteArray host = "127.0.0.1:" + QByteArray::number(port);
     auto request = [&] {
         QNetworkRequest result(QUrl("ws://" + QString::fromLatin1(host) + "/bridge"));
