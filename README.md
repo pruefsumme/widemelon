@@ -118,6 +118,10 @@ Then build and run:
 
 The build script fetches WideMelon's pinned FAAD2 and ENet dependencies,
 builds the checked-in emulator source, and runs the automated tests.
+It uses Qt 6 by default; set `WIDEMELON_USE_QT6=0` to build the emulator and
+tests with Qt 5.15. Install Node.js 18 or newer to run the browser regression
+tests as well. CI covers both Qt versions, including the production bridge's
+loopback transport and the native pairing dialog with Qt's offscreen platform.
 
 ## Technical overview
 

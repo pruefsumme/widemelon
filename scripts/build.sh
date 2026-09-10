@@ -9,10 +9,11 @@ deps="$root/.deps"
 prefix="$deps/local"
 faad_commit=673a22a3c7c33e96e2ff7aae7c4d2bc190dfbf92
 enet_commit=2662c0de09e36f2a2030ccc2c528a3e4c9e8138a
-cmake_options=(-DENABLE_LTO_RELEASE=OFF)
+use_qt6=ON
 if [[ ${WIDEMELON_USE_QT6:-1} == 0 ]]; then
-    cmake_options+=(-DUSE_QT6=OFF)
+    use_qt6=OFF
 fi
+cmake_options=(-DENABLE_LTO_RELEASE=OFF "-DUSE_QT6=$use_qt6")
 export PKG_CONFIG_PATH="$prefix/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
 mkdir -p "$deps"
 
@@ -64,7 +65,7 @@ PC
 
 cmake -S . -B build -G Ninja "${cmake_options[@]}"
 cmake --build build -j "$jobs"
-cmake -S tests -B build/tests -G Ninja
+cmake -S tests -B build/tests -G Ninja "-DUSE_QT6=$use_qt6"
 cmake --build build/tests -j "$jobs"
 ctest --test-dir build/tests --output-on-failure
 printf '\nRun ./widemelon to play.\n'

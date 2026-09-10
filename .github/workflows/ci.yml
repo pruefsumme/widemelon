@@ -9,9 +9,13 @@ permissions:
 
 jobs:
   linux:
-    name: Linux
+    name: Linux (Qt ${{ matrix.qt }})
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        qt: [5, 6]
 
     steps:
       - name: Check out source
@@ -21,12 +25,19 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends \
-            build-essential cmake ninja-build git pkg-config \
+            build-essential cmake ninja-build git pkg-config nodejs \
             extra-cmake-modules libcurl4-gnutls-dev libpcap0.8-dev \
             libsdl2-dev libarchive-dev libzstd-dev \
-            libegl1-mesa-dev libgl1-mesa-dev libwayland-dev \
-            qt6-base-dev qt6-base-private-dev qt6-multimedia-dev libqt6svg6-dev \
-            qt6-websockets-dev
+            libegl1-mesa-dev libgl1-mesa-dev libwayland-dev
+          if [[ "${{ matrix.qt }}" == "6" ]]; then
+            sudo apt-get install --no-install-recommends \
+              qt6-base-dev qt6-base-private-dev qt6-multimedia-dev libqt6svg6-dev qt6-websockets-dev
+          else
+            sudo apt-get install --no-install-recommends \
+              qtbase5-dev qtbase5-private-dev qtmultimedia5-dev libqt5svg5-dev libqt5websockets5-dev
+          fi
 
       - name: Build and test
+        env:
+          WIDEMELON_USE_QT6: ${{ matrix.qt == 6 && '1' || '0' }}
         run: ./scripts/build.sh
