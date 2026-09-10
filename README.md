@@ -71,7 +71,10 @@ immediately and saves it for later sessions.
 The bridge sends the native `256 × 192` bottom screen as JPEG at up to 30 FPS.
 The webpage and controls share the single displayed TCP port, which must be
 allowed by the host firewall. WideMelon detects common firewalls conservatively
-and gives graphical guidance, but never changes firewall settings. It does not
+and gives graphical guidance, but never changes firewall settings or requests
+administrator authorization. Automatic firewalld checks identify its presence
+only and report access as unknown, because even its read-only rule queries can
+trigger PolicyKit authentication. It does not
 stream audio.
 
 > **Network warning:** use only on a private home network you trust. Pairing

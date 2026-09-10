@@ -67,29 +67,17 @@ PhoneFirewallResult InspectPhoneFirewall(const QString& address, quint16 port)
 {
     PhoneFirewallResult result;
 #ifdef Q_OS_LINUX
-    const QString interfaceName = interfaceForAddress(address);
+    Q_UNUSED(address)
+    Q_UNUSED(port)
     const QString firewalld = QStandardPaths::findExecutable("firewall-cmd");
     if (!firewalld.isEmpty())
     {
-        const ProcessResult zone = run(firewalld, {"--get-zone-of-interface=" + interfaceName});
-        if (zone.finished && zone.exitCode == 0 && !zone.output.isEmpty())
-        {
-            result.detected = true;
-            result.name = "firewalld";
-            const QString zoneName = QString::fromUtf8(zone.output).trimmed();
-            const ProcessResult query = run(firewalld,
-                {"--zone=" + zoneName, "--query-port=" + QString::number(port) + "/tcp"});
-            if (!query.finished) return result;
-            if (query.exitCode == 0 && query.output == "yes") result.status = PhoneFirewallStatus::Allowed;
-            else if (query.exitCode == 1 && query.output == "no")
-            {
-                // A port query does not include services, rich rules, policies,
-                // or the zone target. Absence of a port rule is not a block.
-                result.guidance = "firewalld has no explicit rule for WideMelon's TCP port in the selected zone. "
-                    "If the phone cannot connect, check the zone's services and rules in your system firewall settings.";
-            }
-            return result;
-        }
+        // firewalld's read methods can request PolicyKit authentication with
+        // AllowUserInteraction on the server, regardless of client D-Bus flags.
+        // Detect installation only: never call firewall-cmd automatically.
+        result.detected = true;
+        result.name = "firewalld";
+        return result;
     }
 
     const QString ufw = QStandardPaths::findExecutable("ufw");
