@@ -16,6 +16,13 @@ fi
 export PKG_CONFIG_PATH="$prefix/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
 mkdir -p "$deps"
 
+# A checkout upgraded from the former patch layout has a build cache whose
+# source directory is projects/melonDS. Only that generated tree is discarded.
+if [[ -f "$root/build/CMakeCache.txt" ]] &&
+   ! grep -Fqx "CMAKE_HOME_DIRECTORY:INTERNAL=$root" "$root/build/CMakeCache.txt"; then
+    cmake -E remove_directory "$root/build"
+fi
+
 prepare_dependency() {
     local name=$1 checkout=$2 repository=$3 ref=$4 expected=$5
     if [[ ! -f "$checkout/CMakeLists.txt" ]]; then

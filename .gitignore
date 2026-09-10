@@ -1,6 +1,12 @@
 build*/
 .deps/
 dist/
+
+# Disposable checkouts left by WideMelon's former patch-based layout.
+/projects/
+/tools/faad2/
+/tools/enet/
+/tools/local/
 bin
 obj
 *.depend
