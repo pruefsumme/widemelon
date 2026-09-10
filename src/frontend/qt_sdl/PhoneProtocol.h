@@ -1,4 +1,6 @@
 // Pure protocol helpers shared by the WideMelon bridge and renderer tests.
+// Copyright (C) 2026 WideMelon contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
 #include <QByteArray>

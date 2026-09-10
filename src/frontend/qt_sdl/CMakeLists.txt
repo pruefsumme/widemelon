@@ -276,6 +276,33 @@ if (UNIX AND NOT APPLE)
 
     install(FILES io.github.pruefsumme.WideMelon.desktop DESTINATION ${CMAKE_INSTALL_PREFIX}/share/applications)
     install(FILES io.github.pruefsumme.WideMelon.metainfo.xml DESTINATION ${CMAKE_INSTALL_PREFIX}/share/metainfo)
+    set(WIDEMELON_DOC_DIR ${CMAKE_INSTALL_PREFIX}/share/doc/widemelon)
+    install(FILES
+        ${CMAKE_SOURCE_DIR}/LICENSE
+        ${CMAKE_SOURCE_DIR}/NOTICE.md
+        ${CMAKE_SOURCE_DIR}/SOURCE.md
+        ${CMAKE_SOURCE_DIR}/THIRD_PARTY.md
+        ${CMAKE_SOURCE_DIR}/THIRD_PARTY_NOTICES.md
+        DESTINATION ${WIDEMELON_DOC_DIR})
+    install(FILES ${CMAKE_SOURCE_DIR}/src/dolphin/license_dolphin.txt
+        DESTINATION ${WIDEMELON_DOC_DIR}/licenses RENAME dolphin-gpl2.txt)
+    install(FILES ${CMAKE_SOURCE_DIR}/src/blip-buf/license.txt
+        DESTINATION ${WIDEMELON_DOC_DIR}/licenses RENAME blip-buf-lgpl2.1.txt)
+    install(FILES ${CMAKE_SOURCE_DIR}/src/fatfs/LICENSE.txt
+        DESTINATION ${WIDEMELON_DOC_DIR}/licenses RENAME fatfs.txt)
+    install(FILES ${CMAKE_SOURCE_DIR}/src/net/libslirp/COPYRIGHT
+        DESTINATION ${WIDEMELON_DOC_DIR}/licenses RENAME libslirp.txt)
+    install(FILES ${CMAKE_SOURCE_DIR}/src/teakra/LICENSE
+        DESTINATION ${WIDEMELON_DOC_DIR}/licenses RENAME teakra-mit.txt)
+    install(FILES ${CMAKE_SOURCE_DIR}/src/tiny-AES-c/unlicense.txt
+        DESTINATION ${WIDEMELON_DOC_DIR}/licenses RENAME tiny-aes-unlicense.txt)
+    install(FILES ${CMAKE_SOURCE_DIR}/freebios/drastic_bios_readme.txt
+        DESTINATION ${WIDEMELON_DOC_DIR}/licenses RENAME freebios-bsd.txt)
+    install(FILES ${CMAKE_SOURCE_DIR}/src/frontend/qt_sdl/InputConfig/resources/LICENSE.md
+        DESTINATION ${WIDEMELON_DOC_DIR}/licenses RENAME input-diagrams-gpl3.md)
+    install(FILES ${CMAKE_SOURCE_DIR}/licenses/FAAD2-COPYING
+        ${CMAKE_SOURCE_DIR}/licenses/ENet-LICENSE
+        DESTINATION ${WIDEMELON_DOC_DIR}/licenses)
     install(TARGETS melonDS BUNDLE DESTINATION ${CMAKE_BINARY_DIR} RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
 
     if (NOT USE_QT6)

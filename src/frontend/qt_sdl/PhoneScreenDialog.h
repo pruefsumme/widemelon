@@ -1,4 +1,6 @@
 // Native configurator for WideMelon's phone bridge.
+// Copyright (C) 2026 WideMelon contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
 #include <QDialog>

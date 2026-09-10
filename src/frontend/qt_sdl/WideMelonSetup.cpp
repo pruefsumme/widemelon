@@ -1,4 +1,6 @@
 // WideMelon's small native startup dialog.
+// Copyright (C) 2026 WideMelon contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
 #include "WideMelonSetup.h"
 
 #include <algorithm>

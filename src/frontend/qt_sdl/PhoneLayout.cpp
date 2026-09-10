@@ -1,4 +1,6 @@
 // Configurable phone-controller layout shared by the native editor and web client.
+// Copyright (C) 2026 WideMelon contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
 #include "PhoneLayout.h"
 
 #include <algorithm>

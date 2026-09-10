@@ -55,5 +55,5 @@ void AboutDialog::openWebsite()
 
 void AboutDialog::openGitHub()
 {
-    QDesktopServices::openUrl(QUrl("https://github.com/melonDS-emu/melonDS"));;
+    QDesktopServices::openUrl(QUrl("https://github.com/pruefsumme/widemelon"));
 }

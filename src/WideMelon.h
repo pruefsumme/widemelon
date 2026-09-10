@@ -1,4 +1,6 @@
-// WideMelon renderer profile. GPL-3.0-or-later, like the melonDS core.
+// WideMelon renderer profile.
+// Copyright (C) 2026 WideMelon contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
 #include <cstdint>

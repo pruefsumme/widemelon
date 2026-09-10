@@ -1,4 +1,6 @@
 // WideMelon phone bottom-screen and controller bridge.
+// Copyright (C) 2026 WideMelon contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
 #include "PhoneBridge.h"
 
 #include <algorithm>

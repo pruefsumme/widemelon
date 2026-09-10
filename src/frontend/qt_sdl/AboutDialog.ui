@@ -23,7 +23,7 @@
    </size>
   </property>
   <property name="windowTitle">
-   <string>About melonDS</string>
+   <string>About WideMelon</string>
   </property>
   <property name="modal">
    <bool>false</bool>
@@ -108,7 +108,7 @@
           </font>
          </property>
          <property name="text">
-          <string>melonDS</string>
+          <string>WideMelon</string>
          </property>
         </widget>
        </item>
@@ -131,7 +131,7 @@
           <bool>true</bool>
          </property>
          <property name="text">
-          <string>By Arisotura, the melonDS team &lt;a href=&quot;https://github.com/melonDS-emu/melonDS/graphs/contributors&quot;&gt;and contributors&lt;/a&gt;.</string>
+          <string>Based on &lt;a href=&quot;https://github.com/melonDS-emu/melonDS&quot;&gt;melonDS&lt;/a&gt; by Arisotura, the melonDS team and contributors. WideMelon modifications are maintained independently.</string>
          </property>
          <property name="openExternalLinks">
           <bool>true</bool>
@@ -154,7 +154,7 @@
        <item alignment="Qt::AlignmentFlag::AlignBottom">
         <widget class="QLabel" name="label_3">
          <property name="enabled">
-          <bool>false</bool>
+          <bool>true</bool>
          </property>
          <property name="font">
           <font>
@@ -162,13 +162,13 @@
           </font>
          </property>
          <property name="text">
-          <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Licensed under the GNU General Public License v3 or any newer version.&lt;/p&gt;&lt;p&gt;melonDS is intended only for use with software that you own.&lt;/p&gt;&lt;p&gt;The Nintendo DS and Nintendo DSi systems are the property of Nintendo.&lt;br /&gt;melonDS and the melonDS team are not affiliated with or endorsed by Nintendo.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+          <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Licensed under GPLv3 or later, without warranty. Complete source and notices are available at &lt;a href=&quot;https://github.com/pruefsumme/widemelon&quot;&gt;github.com/pruefsumme/widemelon&lt;/a&gt;.&lt;/p&gt;&lt;p&gt;WideMelon is intended only for use with software that you own. It is not affiliated with or endorsed by the melonDS project or Nintendo.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
          </property>
          <property name="textFormat">
           <enum>Qt::TextFormat::RichText</enum>
          </property>
          <property name="wordWrap">
-          <bool>false</bool>
+          <bool>true</bool>
          </property>
         </widget>
        </item>

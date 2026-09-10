@@ -18,8 +18,8 @@ endif()
 
 project(melonDS
     VERSION 1.1
-    DESCRIPTION "DS emulator, sorta"
-    HOMEPAGE_URL "https://melonds.kuribo64.net"
+    DESCRIPTION "WideMelon widescreen Nintendo DS emulator"
+    HOMEPAGE_URL "https://github.com/pruefsumme/widemelon"
     LANGUAGES C CXX)
 
 include(CheckSymbolExists)
