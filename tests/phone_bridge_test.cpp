@@ -27,6 +27,9 @@
 
 namespace
 {
+// CI runners can delay WebSocket close delivery and the first one-second sample.
+constexpr int kSlowBridgeTimeoutMs = 5000;
+
 bool waitUntil(const std::function<bool()>& condition, int timeoutMs = 1500)
 {
     QElapsedTimer timer;
@@ -242,7 +245,7 @@ int main(int argc, char** argv)
     auth(first, originalCode);
     auth(second, originalCode);
     CHECK(waitUntil([&] { return bridge.isConnected() && firstMessages == 1
-        && second.state() == QAbstractSocket::UnconnectedState; }));
+        && second.state() == QAbstractSocket::UnconnectedState; }, kSlowBridgeTimeoutMs));
     CHECK(secondMessages == 0);
     bridge.submitFrame(frame, 2.5);
     CHECK(waitUntil([&] { return frameCount == 1; }));
@@ -298,7 +301,7 @@ int main(int argc, char** argv)
         if (message.value("type").toString() == "ping")
             send(first, {{"v", 2}, {"type", "pong"}, {"sent", message.value("sent")}});
     });
-    CHECK(waitUntil([&] { return bridge.metrics().offeredFps > 0; }));
+    CHECK(waitUntil([&] { return bridge.metrics().offeredFps > 0; }, kSlowBridgeTimeoutMs));
     CHECK(bridge.exportDiagnostics(diagnostics.filePath("timing.json"), {}));
     QFile timingReport(diagnostics.filePath("timing.json"));
     CHECK(timingReport.open(QIODevice::ReadOnly));
