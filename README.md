@@ -49,8 +49,8 @@ The bridge is off by default and never starts without an explicit action.
    **Config > Phone screen & controller…**.
 2. Select the private IPv4 address shared with your phone and choose
    **Enable for this session** or **Start server**.
-3. Open the displayed `http://` address in current Android Chrome or iOS
-   Safari. The first phone to connect controls the session.
+3. Scan the displayed QR code with current Android Chrome or iOS Safari, or
+   open the displayed `http://` address and enter its 10-digit pairing code.
 
 While the phone is connected, the desktop uses the wide top screen by itself.
 While waiting, after a disconnect, or after any network/capture failure, the
@@ -68,14 +68,34 @@ directional control can use a D-pad or analog-stick appearance, and the status,
 FPS, and frame text can be hidden. Applying a layout updates a connected phone
 immediately and saves it for later sessions.
 
-The initial bridge sends the native `256 × 192` bottom screen as JPEG at up to
-30 FPS. It uses the displayed web port and the following port, so both must be
-allowed by the host firewall. It does not stream audio.
+The bridge sends the native `256 × 192` bottom screen as JPEG at up to 30 FPS.
+The webpage and controls share the single displayed TCP port, which must be
+allowed by the host firewall. **Firewall setup guide…** opens a native wizard
+while the bridge stays running. On Linux, it detects common firewall tools and
+lets you choose firewalld, UFW, or general system guidance. For firewalld, run the
+shown zone checks in a terminal and enter the applicable zone; WideMelon never
+guesses it or invokes an authorization-capable query. Generated rules require a
+verified private IPv4 subnet and limit access to the selected address and TCP
+port. UFW rules also select the interface. Both include persistent setup,
+verification, and removal commands; neither reloads, disables, or resets the
+firewall. Revisit the rule if the network, address, zone, or port changes.
 
-> **Network warning:** the initial bridge has no authentication or encryption.
-> While it is running, the first device on the selected network can control the
-> emulator. Use it only on a network you trust, never expose its ports to the
-> internet, and stop it when finished.
+WideMelon never runs administrator commands or changes firewall rules itself.
+The user reviews and runs the shown commands. Automatic firewalld checks detect
+installation only, because even read-only queries can trigger PolicyKit. UFW
+checks use unprivileged status or its boot configuration, with an unknown result
+when access is unavailable. Unsupported firewall tools receive general guidance;
+the wizard includes native system-settings directions for future Windows/macOS
+builds, not automated firewall configuration on those platforms. If the phone
+already connects, no new firewall rule is needed. The bridge does not stream audio.
+
+> **Network warning:** use only on a private home network you trust. Pairing
+> prevents other devices from connecting, but the connection is not encrypted.
+
+WideMelon creates a new QR secret and independent 10-digit code every time the
+bridge starts. Credentials are held only for that session and also change when
+you revoke pairing or generate a new code. Repeated failures are temporarily
+rate-limited; they never rotate a valid code.
 
 If no private network address is available, join the same Wi-Fi network on both
 devices or create a hotspot with your operating system. WideMelon does not
@@ -113,6 +133,29 @@ Then build and run:
 
 The build script fetches WideMelon's pinned FAAD2 and ENet dependencies,
 builds the checked-in emulator source, and runs the automated tests.
+It uses Qt 6 by default; set `WIDEMELON_USE_QT6=0` to build the emulator and
+tests with Qt 5.15. Install Node.js 18 or newer to run the browser regression
+tests as well. CI covers both Qt versions, including the production bridge's
+loopback transport and the native pairing dialog with Qt's offscreen platform.
+
+An optional real-browser input smoke test uses installed Chromium and Node.js
+22 or newer. It checks simultaneous button holds and continuous touch through
+the production bridge while streaming a generated test pattern; no ROM is needed:
+
+```sh
+node tests/phone_browser_smoke.js build/tests/phone_bridge_test /usr/bin/chromium
+```
+
+Add `--benchmark --dialog` to measure sustained streaming during idle, continuous
+touch, and simultaneous button holds, with the settings dialog open. The test
+reports per-stage FPS and decode/delivery timing and fails below 28.5 displayed
+FPS. Enable it explicitly with `-DWIDEMELON_ENABLE_STREAM_BENCHMARK=ON`; this
+keeps ordinary builds independent of local browser DevTools configuration.
+For a browser-only A/B comparison, set `WIDEMELON_BENCH_REVISION` to a commit hash;
+the test substitutes that revision's browser script while keeping the same bridge.
+`WIDEMELON_BENCH_QUALITY=100` and `WIDEMELON_BENCH_CPU=8` select JPEG quality and
+Chromium CPU throttling for controlled comparisons. These synthetic/loopback
+measurements do not prove Wi-Fi performance or gameplay GPU capture performance.
 
 ## Technical overview
 
@@ -136,11 +179,31 @@ from the OpenGL output, downsamples it to native resolution, and uses a bounded
 asynchronous readback/encoder pipeline. Acknowledgements make old frames drop
 instead of accumulating latency. A one-second heartbeat releases every remote
 button and touch and restores the desktop fallback after a failed connection.
+Before that pipeline is enabled for a phone, the browser must authenticate with
+the session-only QR secret or manual code and originate from the selected local
+subnet. Unauthenticated clients receive neither layout nor screen frames and
+cannot submit controls.
+
+This is an authorization boundary for ordinary devices on a trusted home LAN,
+not encrypted hostile-network transport. A device able to sniff or actively
+modify local traffic, or compromised network infrastructure, can still observe
+or interfere with the session. Do not expose the port to the internet or use it
+on public, guest, school, workplace, or otherwise untrusted networks. VPN and
+firewall status are advisory diagnostics rather than proof of reachability or
+trust.
 
 The phone configurator includes a generated test pattern, live bridge logs,
 frame/encode/drop/RTT metrics, optional rotating file logs, synchronous GPU
 readback for driver diagnosis, and a sanitized JSON diagnostics export. The
-following environment overrides change diagnostics only and never start the
+export retains up to 60 recent timing samples: capture/encode/send/ACK rates,
+GPU capture time, encoder-to-GUI delivery delay, frame acknowledgement time,
+phone decode time, input rate, GUI timer delay, and queued socket bytes. Export
+during or immediately after an FPS drop, before restarting the bridge. Frame
+acknowledgement time includes transport and phone processing; it is distinct
+from the existing heartbeat RTT. Timing collection does not change the frame
+cap, acknowledgement policy, or latest-frame replacement.
+
+The following environment overrides change diagnostics only and never start the
 network listener:
 
 ```sh

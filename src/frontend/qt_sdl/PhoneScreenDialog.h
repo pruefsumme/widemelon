@@ -4,6 +4,7 @@
 #pragma once
 
 #include <QDialog>
+#include "PhoneFirewall.h"
 
 class QCheckBox;
 class QComboBox;
@@ -29,11 +30,13 @@ private slots:
     void startOrArm();
     void stopOrDisarm();
     void exportDiagnostics();
+    void regeneratePairing();
 
 private:
     void loadControls();
     void applyControls();
     bool confirmUnsafeStart();
+    void checkFirewall();
 
     PhoneBridgeManager* manager;
     bool startup;
@@ -47,12 +50,19 @@ private:
     QCheckBox* testPattern;
     QLabel* status;
     QLabel* address;
+    QLabel* pairingQr;
+    QLabel* pairingCode;
+    QLabel* connectedClient;
     QLabel* metrics;
     QLabel* warning;
     QPlainTextEdit* logs;
     QPushButton* startButton;
     QPushButton* stopButton;
+    QPushButton* firewallButton;
     QTimer* refreshTimer;
+    bool firewallChecked = false;
+    PhoneFirewallResult firewallResult;
+    QString displayedPairingUrl;
 };
 
 namespace WideMelon

@@ -7,19 +7,27 @@
 #include <memory>
 
 #include <QElapsedTimer>
+#include <QHash>
 #include <QImage>
+#include <QJsonArray>
 #include <QList>
 #include <QMutex>
 #include <QObject>
+#include <QSet>
 #include <QString>
 #include <QStringList>
+#include <QWebSocketProtocol>
 
 #include "types.h"
+#include "PhoneSecurity.h"
+#include "PhoneFirewall.h"
 
 class QTcpServer;
+class QTcpSocket;
 class QTimer;
 class QWebSocket;
 class QWebSocketServer;
+class QHostAddress;
 
 struct PhoneBridgeSettings
 {
@@ -42,6 +50,20 @@ struct PhoneBridgeMetrics
     quint64 framesDropped = 0;
     quint64 bytesSent = 0;
     quint64 protocolErrors = 0;
+    quint64 authenticationFailures = 0;
+    quint64 inputMessages = 0;
+    quint64 acknowledgementTimeouts = 0;
+    double captureMs = 0.0;
+    double maxCaptureMs = 0.0;
+    double deliveryMs = 0.0;
+    double maxDeliveryMs = 0.0;
+    double frameAckMs = 0.0;
+    double maxFrameAckMs = 0.0;
+    double browserDecodeMs = 0.0;
+    double maxBrowserDecodeMs = 0.0;
+    double offeredFps = 0.0;
+    double sentFps = 0.0;
+    double ackedFps = 0.0;
     double lastEncodeMs = 0.0;
     double averageEncodeMs = 0.0;
     double roundTripMs = 0.0;
@@ -78,29 +100,34 @@ public:
     void reportCaptureDrop(const QString& reason);
     QString statusText() const;
     QString url() const;
+    QString pairingUrl() const;
+    QString pairingCode() const;
+    QString connectedClientLabel() const;
     QString lastError() const;
+    void regeneratePairing();
 
     melonDS::u32 remoteKeyMask() const;
     melonDS::u32 remoteHotkeyMask() const;
     melonDS::u32 remoteTouchSnapshot() const;
 
     // Safe to call from the emulator/render thread. Work is replaced, never queued.
-    void submitFrame(const QImage& image);
+    void submitFrame(const QImage& image, double captureMs = 0.0);
     bool wantsFrames() const { return connected.load(std::memory_order_relaxed) || testPattern.load(std::memory_order_relaxed); }
     bool testPatternEnabled() const { return testPattern.load(std::memory_order_relaxed); }
     void setTestPattern(bool enabled);
 
     PhoneBridgeMetrics metrics() const;
     QStringList logLines() const;
-    bool exportDiagnostics(const QString& path, QString* error = nullptr) const;
+    bool exportDiagnostics(const QString& path, const PhoneFirewallResult& firewall, QString* error = nullptr) const;
 
 signals:
     void statusChanged();
     void connectionChanged(bool connected);
     void logAdded(const QString& line);
+    void pairingChanged();
 
 private slots:
-    void acceptHttpConnections();
+    void acceptTcpConnections();
     void acceptWebSocket();
     void checkHeartbeat();
     void emitTestPattern();
@@ -111,10 +138,22 @@ private:
     enum LogLevel { Error = 0, Info = 1, Debug = 2, Trace = 3 };
     void log(LogLevel level, const QString& category, const QString& message) const;
     void resetRemoteInput();
+    void closeClient(QWebSocketProtocol::CloseCode code, const QString& reason);
     void setConnected(bool value);
-    void handleHttpSocket(class QTcpSocket* socket);
+    void handleTcpSocket(class QTcpSocket* socket);
+    void routeTcpSocket(class QTcpSocket* socket);
+    void serveHttpSocket(class QTcpSocket* socket, const QByteArray& path, bool head);
+    void handlePendingMessage(QWebSocket* socket, const QString& message);
+    void authenticateClient(QWebSocket* socket);
+    void closePendingClient(QWebSocket* socket, QWebSocketProtocol::CloseCode code, const QString& reason);
+    bool peerAllowed(const QHostAddress& peer) const;
+    bool authenticationTemporarilyBlocked(const QHostAddress& peer, qint64 now);
+    void recordAuthenticationFailure(const QHostAddress& peer, qint64 now);
+    void generatePairingCredentials();
+    void clearPairingCredentials();
     void handleTextMessage(const QString& message);
-    void encodedFrameReady(quint32 generation, quint32 sequence, const QByteArray& jpeg, double encodeMs);
+    void encodedFrameReady(quint32 generation, quint32 sequence, const QByteArray& jpeg, double deliveryMs);
+    void samplePerformance(qint64 now);
     void sendPendingFrame();
     void sendLayout();
     void rotateLogIfNeeded() const;
@@ -125,10 +164,17 @@ private:
     QString errorText;
     mutable QStringList recentLogs;
     PhoneBridgeMetrics currentMetrics;
+    PhoneBridgeMetrics sampledMetrics;
+    QJsonArray performanceSamples;
+    qint64 lastPerformanceSampleMs = 0;
+    qint64 lastHeartbeatCheckMs = 0;
+    qint64 maxHeartbeatDelayMs = 0;
 
     QTcpServer* httpServer = nullptr;
     QWebSocketServer* webSocketServer = nullptr;
     QWebSocket* client = nullptr;
+    QSet<QTcpSocket*> pendingTcpSockets;
+    QSet<QWebSocket*> pendingClients;
     QTimer* heartbeatTimer = nullptr;
     QTimer* testPatternTimer = nullptr;
     QElapsedTimer heartbeatClock;
@@ -137,6 +183,9 @@ private:
     qint64 controlRateWindowMs = 0;
     int controlMessagesInWindow = 0;
     quint32 lastInputSequence = 0;
+    PhonePairingCredentials pairingCredentials;
+    QString clientAddressLabel;
+    PhoneAuthenticationLimiter authenticationLimiter;
 
     std::unique_ptr<EncoderThread> encoder;
     std::atomic<bool> connected {false};

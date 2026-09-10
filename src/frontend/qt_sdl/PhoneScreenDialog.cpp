@@ -12,33 +12,226 @@
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFileDialog>
+#include <QFutureWatcher>
 #include <QFormLayout>
 #include <QGuiApplication>
 #include <QHostAddress>
 #include <QGroupBox>
+#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMessageBox>
+#include <QPainter>
 #include <QPlainTextEdit>
+#include <QPixmap>
 #include <QPushButton>
 #include <QScreen>
 #include <QScrollBar>
+#include <QScrollArea>
 #include <QSpinBox>
 #include <QTimer>
 #include <QVBoxLayout>
+#include <QWizard>
+#include <QWizardPage>
+#include <QtConcurrentRun>
 
 #include "PhoneBridge.h"
+#include "PhoneFirewall.h"
 #include "PhoneLayoutDialog.h"
+#include "qrcodegen/qrcodegen.hpp"
 
 namespace
 {
 std::atomic<bool> requestedForSession {false};
+constexpr int kPairingQrSize = 168;
 
 QString addressLabel(const QString& value)
 {
     if (QHostAddress(value).isLoopback()) return value + " (this computer only)";
-    if (PhoneBridgeManager::isPrivateAddress(value)) return value + " (private LAN)";
+    if (PhoneBridgeManager::isPrivateAddress(value))
+        return value + (IsLikelyVpnInterface(value) ? " (private; possible VPN)" : " (private LAN)");
     return value + " (non-private; unsafe)";
+}
+
+QPixmap pairingQrCode(const QString& text)
+{
+    if (text.isEmpty()) return {};
+    const QByteArray utf8 = text.toUtf8();
+    const qrcodegen::QrCode code = qrcodegen::QrCode::encodeText(
+        utf8.constData(), qrcodegen::QrCode::Ecc::MEDIUM);
+    constexpr int border = 4;
+    const int scale = std::max(1, kPairingQrSize / (code.getSize() + border * 2));
+    const int pixels = (code.getSize() + border * 2) * scale;
+    QImage image(pixels, pixels, QImage::Format_RGB32);
+    image.fill(Qt::white);
+    QPainter painter(&image);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(Qt::black);
+    for (int y = 0; y < code.getSize(); y++)
+        for (int x = 0; x < code.getSize(); x++)
+            if (code.getModule(x, y))
+                painter.drawRect((x + border) * scale, (y + border) * scale, scale, scale);
+    return QPixmap::fromImage(image);
+}
+
+void showFirewallGuide(QWidget* parent, const PhoneFirewallResult& detected,
+                       const QString& address, quint16 port)
+{
+    if (auto existing = parent->findChild<QWizard*>("phoneFirewallGuide"))
+    {
+        existing->show();
+        existing->raise();
+        existing->activateWindow();
+        return;
+    }
+    auto wizard = new QWizard(parent);
+    wizard->setObjectName("phoneFirewallGuide");
+    wizard->setProperty("phoneEndpoint", address + ':' + QString::number(port));
+    wizard->setAttribute(Qt::WA_DeleteOnClose);
+    wizard->setWindowTitle("Set up the firewall");
+    wizard->setWizardStyle(QWizard::ModernStyle);
+    wizard->resize(640, 560);
+
+    auto introduction = new QWizardPage;
+    introduction->setTitle("Check the selected network");
+    auto introductionLayout = new QVBoxLayout(introduction);
+    auto explanation = new QLabel(
+        QString("WideMelon's server is listening at %1:%2. If your phone can already open the pairing page, "
+                "no new rule is needed.\n\nUse only your trusted home network. WideMelon will not run "
+                "administrator commands; you review and run them in your terminal or system settings.")
+            .arg(address).arg(port));
+    explanation->setTextFormat(Qt::PlainText);
+    explanation->setWordWrap(true);
+    introductionLayout->addWidget(explanation);
+    auto firewall = new QComboBox;
+    firewall->addItem("System firewall / another security product", "");
+#ifdef Q_OS_LINUX
+    firewall->addItem("firewalld", "firewalld");
+    firewall->addItem("UFW", "UFW");
+#endif
+    const int selected = firewall->findData(detected.name);
+    if (selected >= 0) firewall->setCurrentIndex(selected);
+    introductionLayout->addWidget(new QLabel("Use the firewall that manages this network:"));
+    introductionLayout->addWidget(firewall);
+
+    auto instructions = new QLabel;
+    instructions->setTextFormat(Qt::PlainText);
+    instructions->setWordWrap(true);
+    introductionLayout->addWidget(instructions);
+    auto preparation = new QPlainTextEdit;
+    preparation->setReadOnly(true);
+    preparation->setMaximumHeight(95);
+    introductionLayout->addWidget(preparation);
+    auto copyPreparation = new QPushButton("Copy zone checks");
+    introductionLayout->addWidget(copyPreparation, 0, Qt::AlignRight);
+    QObject::connect(copyPreparation, &QPushButton::clicked, wizard, [preparation]
+    {
+        QApplication::clipboard()->setText(preparation->toPlainText());
+    });
+    auto zoneLabel = new QLabel("firewalld zone (from the checks above):");
+    auto zone = new QLineEdit;
+    zone->setObjectName("firewalldZone");
+    zone->setMaxLength(64);
+    introductionLayout->addWidget(zoneLabel);
+    introductionLayout->addWidget(zone);
+    introductionLayout->addStretch();
+    wizard->addPage(introduction);
+
+    auto setup = new QWizardPage;
+    setup->setTitle("Review and add the rule");
+    auto setupLayout = new QVBoxLayout(setup);
+    auto scope = new QLabel;
+    scope->setTextFormat(Qt::PlainText);
+    scope->setWordWrap(true);
+    setupLayout->addWidget(scope);
+    auto commands = new QPlainTextEdit;
+    commands->setReadOnly(true);
+    commands->setMinimumHeight(130);
+    setupLayout->addWidget(commands);
+    auto copy = new QPushButton("Copy commands");
+    setupLayout->addWidget(copy, 0, Qt::AlignRight);
+    QObject::connect(copy, &QPushButton::clicked, wizard, [commands]
+    {
+        QApplication::clipboard()->setText(commands->toPlainText());
+    });
+    wizard->addPage(setup);
+
+    auto verify = new QWizardPage;
+    verify->setTitle("Verify and keep the rule");
+    auto verifyLayout = new QVBoxLayout(verify);
+    auto verifyText = new QLabel(
+        "After applying the rule, retry the pairing page on your phone. Opening it proves reachability "
+        "at that moment. The checks below also confirm the saved rule; test again after a restart.\n\n"
+        "If it still fails, check that both devices share the home network and that Wi-Fi client isolation "
+        "or another security product is not blocking them. Do not forward the port on your router.\n\n"
+        "Repeat setup if the host address, subnet, interface, zone, or port changes. Remove an old rule first.");
+    verifyText->setWordWrap(true);
+    verifyLayout->addWidget(verifyText);
+    auto verificationHint = new QLabel;
+    verificationHint->setTextFormat(Qt::PlainText);
+    verificationHint->setWordWrap(true);
+    verifyLayout->addWidget(verificationHint);
+    auto verification = new QPlainTextEdit;
+    verification->setReadOnly(true);
+    verification->setMaximumHeight(90);
+    verifyLayout->addWidget(verification);
+    auto copyCheck = new QPushButton("Copy check commands");
+    verifyLayout->addWidget(copyCheck, 0, Qt::AlignRight);
+    QObject::connect(copyCheck, &QPushButton::clicked, wizard, [verification]
+    {
+        QApplication::clipboard()->setText(verification->toPlainText());
+    });
+    auto removalLabel = new QLabel("To remove only this rule later:");
+    verifyLayout->addWidget(removalLabel);
+    auto removal = new QPlainTextEdit;
+    removal->setReadOnly(true);
+    removal->setMaximumHeight(90);
+    verifyLayout->addWidget(removal);
+    auto copyRemoval = new QPushButton("Copy removal commands");
+    verifyLayout->addWidget(copyRemoval, 0, Qt::AlignRight);
+    QObject::connect(copyRemoval, &QPushButton::clicked, wizard, [removal]
+    {
+        QApplication::clipboard()->setText(removal->toPlainText());
+    });
+    wizard->addPage(verify);
+
+    const auto refresh = [=]
+    {
+        PhoneFirewallResult selectedFirewall;
+        selectedFirewall.name = firewall->currentData().toString();
+        const auto guide = BuildPhoneFirewallGuide(selectedFirewall, FindPhoneFirewallNetwork(address), port, zone->text());
+        const bool needsZone = !guide.preparation.isEmpty();
+        instructions->setText(guide.instructions);
+        preparation->setPlainText(guide.preparation);
+        preparation->setVisible(needsZone);
+        copyPreparation->setVisible(needsZone);
+        zoneLabel->setVisible(needsZone);
+        zone->setVisible(needsZone);
+        scope->setText(guide.commands.isEmpty() ? (needsZone
+            ? "Go Back and enter the firewalld zone from the terminal checks before generating a rule."
+            : guide.instructions)
+            : guide.scope + "\n\nCopy and run these commands in your terminal. Enter your administrator password "
+              "there if asked. They add this rule for the current session and future restarts, without reloading "
+              "or disabling your firewall.");
+        commands->setPlainText(guide.commands);
+        commands->setVisible(!guide.commands.isEmpty());
+        copy->setVisible(!guide.commands.isEmpty());
+        verificationHint->setText(guide.verificationHint);
+        verification->setPlainText(guide.verification);
+        verification->setVisible(!guide.verification.isEmpty());
+        copyCheck->setVisible(!guide.verification.isEmpty());
+        removal->setPlainText(guide.removal);
+        removal->setVisible(!guide.removal.isEmpty());
+        removalLabel->setVisible(!guide.removal.isEmpty());
+        copyRemoval->setVisible(!guide.removal.isEmpty());
+    };
+    QObject::connect(firewall, qOverload<int>(&QComboBox::currentIndexChanged), wizard, refresh);
+    QObject::connect(zone, &QLineEdit::textChanged, wizard, refresh);
+    QObject::connect(wizard, &QWizard::currentIdChanged, wizard, refresh);
+    refresh();
+    // Non-modal: no blocking probes or nested event loop on the streaming thread.
+    wizard->show();
 }
 }
 
@@ -54,7 +247,7 @@ PhoneScreenDialog::PhoneScreenDialog(PhoneBridgeManager* manager, bool startup, 
     root->setContentsMargins(14, 14, 14, 14);
     root->setSpacing(10);
 
-    warning = new QLabel("⚠ No authentication: while listening, the first device on the selected network can control WideMelon.");
+    warning = new QLabel("Use only on a private home network you trust. Pairing prevents other devices from connecting, but the connection is not encrypted.");
     warning->setWordWrap(true);
     warning->setStyleSheet("QLabel { color: #9a5a00; background: #fff0c2; padding: 8px; border-radius: 4px; }");
     root->addWidget(warning);
@@ -63,6 +256,7 @@ PhoneScreenDialog::PhoneScreenDialog(PhoneBridgeManager* manager, bool startup, 
     auto sessionLayout = new QFormLayout(sessionBox);
     status = new QLabel;
     address = new QLabel;
+    address->setWordWrap(true);
     address->setTextInteractionFlags(Qt::TextSelectableByMouse);
     sessionLayout->addRow("Status", status);
     auto addressRow = new QHBoxLayout;
@@ -70,7 +264,33 @@ PhoneScreenDialog::PhoneScreenDialog(PhoneBridgeManager* manager, bool startup, 
     auto copy = new QPushButton("Copy URL");
     addressRow->addWidget(copy);
     sessionLayout->addRow("Phone URL", addressRow);
+    pairingQr = new QLabel;
+    pairingQr->setAlignment(Qt::AlignCenter);
+    pairingQr->setFixedSize(kPairingQrSize, kPairingQrSize);
+    pairingQr->setWordWrap(true);
+    pairingQr->setText("Start the server to create a pairing code.");
+    pairingCode = new QLabel;
+    pairingCode->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    QFont codeFont = pairingCode->font();
+    codeFont.setBold(true);
+    codeFont.setPointSize(codeFont.pointSize() + 4);
+    pairingCode->setFont(codeFont);
+    sessionLayout->addRow("Manual code", pairingCode);
+    connectedClient = new QLabel("None");
+    sessionLayout->addRow("Connected phone", connectedClient);
+    sessionLayout->addRow("Scan to pair", pairingQr);
     root->addWidget(sessionBox);
+
+    // Keep pairing details and actions outside the scrolling settings area.
+    // Expanded diagnostics must not push them off a smaller laptop screen.
+    auto settingsArea = new QScrollArea;
+    settingsArea->setWidgetResizable(true);
+    settingsArea->setFrameShape(QFrame::NoFrame);
+    auto settingsContents = new QWidget;
+    auto settingsLayout = new QVBoxLayout(settingsContents);
+    settingsLayout->setContentsMargins(0, 0, 0, 0);
+    settingsArea->setWidget(settingsContents);
+    root->addWidget(settingsArea, 1);
 
     auto networkBox = new QGroupBox("Network & stream");
     auto form = new QFormLayout(networkBox);
@@ -82,7 +302,7 @@ PhoneScreenDialog::PhoneScreenDialog(PhoneBridgeManager* manager, bool startup, 
     form->addRow("IPv4 interface", interfaceRow);
     port = new QSpinBox;
     port->setRange(1024, 65534);
-    port->setToolTip("The web page uses this port; WebSocket control uses the next port.");
+    port->setToolTip("The web page, video, and controls share this TCP port.");
     form->addRow("Base port", port);
     quality = new QSpinBox;
     quality->setRange(30, 100);
@@ -93,9 +313,15 @@ PhoneScreenDialog::PhoneScreenDialog(PhoneBridgeManager* manager, bool startup, 
     auto layoutButton = new QPushButton("Edit controller layout…");
     layoutButton->setToolTip("Arrange and resize the phone screen and controls with the mouse.");
     form->addRow("Phone controls", layoutButton);
-    root->addWidget(networkBox);
+    auto securityButton = new QPushButton("Security details…");
+    form->addRow("Advanced", securityButton);
+    firewallButton = new QPushButton("Firewall setup guide…");
+    form->addRow("Connection help", firewallButton);
+    settingsLayout->addWidget(networkBox);
 
-    auto diagnosticsBox = new QGroupBox("Diagnostics");
+    auto diagnosticsBox = new QGroupBox("Advanced diagnostics");
+    diagnosticsBox->setCheckable(true);
+    diagnosticsBox->setChecked(false);
     auto diagnosticsLayout = new QFormLayout(diagnosticsBox);
     logLevel = new QComboBox;
     logLevel->addItems({"Errors", "Info", "Debug", "Trace inputs"});
@@ -111,24 +337,34 @@ PhoneScreenDialog::PhoneScreenDialog(PhoneBridgeManager* manager, bool startup, 
     metrics = new QLabel;
     metrics->setWordWrap(true);
     diagnosticsLayout->addRow("Live metrics", metrics);
-    root->addWidget(diagnosticsBox);
+    const QList<QWidget*> diagnosticWidgets = diagnosticsBox->findChildren<QWidget*>(
+        QString(), Qt::FindDirectChildrenOnly);
+    for (QWidget* widget : diagnosticWidgets) widget->setVisible(false);
+    connect(diagnosticsBox, &QGroupBox::toggled, this, [diagnosticWidgets](bool visible)
+    {
+        for (QWidget* widget : diagnosticWidgets) widget->setVisible(visible);
+    });
+    settingsLayout->addWidget(diagnosticsBox);
 
     logs = new QPlainTextEdit;
     logs->setReadOnly(true);
     logs->setMaximumBlockCount(1000);
     logs->setPlaceholderText("Bridge events will appear here after the session is enabled.");
-    root->addWidget(logs, 1);
+    settingsLayout->addWidget(logs, 1);
 
-    auto actions = new QHBoxLayout;
+    auto actions = new QGridLayout;
     startButton = new QPushButton(startup ? "Enable for this session" : "Start server");
     stopButton = new QPushButton(startup ? "Disable for this session" : "Stop server");
     auto disconnect = new QPushButton("Disconnect phone");
+    auto regenerate = new QPushButton("Generate new code");
+    auto revoke = new QPushButton("Revoke pairing");
     auto exportButton = new QPushButton("Export diagnostics…");
-    actions->addWidget(startButton);
-    actions->addWidget(stopButton);
-    actions->addWidget(disconnect);
-    actions->addStretch();
-    actions->addWidget(exportButton);
+    actions->addWidget(startButton, 0, 0);
+    actions->addWidget(stopButton, 0, 1);
+    actions->addWidget(disconnect, 0, 2);
+    actions->addWidget(regenerate, 1, 0);
+    actions->addWidget(revoke, 1, 1);
+    actions->addWidget(exportButton, 1, 2);
     root->addLayout(actions);
 
     auto closeButton = new QDialogButtonBox(QDialogButtonBox::Close);
@@ -142,6 +378,8 @@ PhoneScreenDialog::PhoneScreenDialog(PhoneBridgeManager* manager, bool startup, 
     connect(startButton, &QPushButton::clicked, this, &PhoneScreenDialog::startOrArm);
     connect(stopButton, &QPushButton::clicked, this, &PhoneScreenDialog::stopOrDisarm);
     connect(disconnect, &QPushButton::clicked, this, [this] { if (this->manager) this->manager->disconnectClient(); });
+    connect(regenerate, &QPushButton::clicked, this, &PhoneScreenDialog::regeneratePairing);
+    connect(revoke, &QPushButton::clicked, this, &PhoneScreenDialog::regeneratePairing);
     connect(exportButton, &QPushButton::clicked, this, &PhoneScreenDialog::exportDiagnostics);
     connect(layoutButton, &QPushButton::clicked, this, [this]
     {
@@ -149,6 +387,20 @@ PhoneScreenDialog::PhoneScreenDialog(PhoneBridgeManager* manager, bool startup, 
         editor->show();
         editor->raise();
         editor->activateWindow();
+    });
+    connect(securityButton, &QPushButton::clicked, this, [this]
+    {
+        QMessageBox::information(this, "Phone bridge security",
+            "Pairing blocks ordinary unauthorized devices on the selected home network. "
+            "Video and controls use unencrypted HTTP and WebSocket traffic. It does not protect against "
+            "traffic sniffing, active interception, compromised routers, or hostile shared networks.\n\n"
+            "VPN identification and firewall checks are diagnostic hints, not security guarantees.");
+    });
+    connect(firewallButton, &QPushButton::clicked, this, [this]
+    {
+        if (!this->manager || !this->manager->isListening()) return;
+        const auto settings = this->manager->settings();
+        showFirewallGuide(this, firewallResult, settings.address, settings.basePort);
     });
     connect(closeButton, &QDialogButtonBox::rejected, this, &QDialog::close);
     connect(testPattern, &QCheckBox::toggled, this, [this](bool value)
@@ -168,6 +420,7 @@ PhoneScreenDialog::PhoneScreenDialog(PhoneBridgeManager* manager, bool startup, 
     connect(logLevel, qOverload<int>(&QComboBox::currentIndexChanged), this, [this] { applyControls(); });
     connect(consoleLog, &QCheckBox::toggled, this, [this] { applyControls(); });
     connect(fileLog, &QCheckBox::toggled, this, [this] { applyControls(); });
+    if (manager) connect(manager, &PhoneBridgeManager::pairingChanged, this, &PhoneScreenDialog::updateUi);
     updateUi();
 }
 
@@ -230,9 +483,9 @@ void PhoneScreenDialog::applyControls()
 
 bool PhoneScreenDialog::confirmUnsafeStart()
 {
-    return QMessageBox::warning(this, "Start unauthenticated phone bridge",
-        "The first device that connects from the selected network will be able to control WideMelon. "
-        "Only continue on a network you trust.\n\nThe bridge stops when WideMelon exits.",
+    return QMessageBox::warning(this, "Start phone bridge on trusted network",
+        "Pairing prevents ordinary devices from connecting, but video and controls are not encrypted. "
+        "Only continue on a private home network you trust.\n\nThe bridge stops when WideMelon exits.",
         QMessageBox::Cancel | QMessageBox::Ok, QMessageBox::Cancel) == QMessageBox::Ok;
 }
 
@@ -251,7 +504,33 @@ void PhoneScreenDialog::startOrArm()
         requestedForSession.store(true);
     else if (manager && !manager->start())
         QMessageBox::critical(this, "Phone bridge failed", manager->lastError());
+    else
+        checkFirewall();
     updateUi();
+}
+
+void PhoneScreenDialog::checkFirewall()
+{
+    if (!manager || !manager->isListening() || firewallChecked) return;
+    firewallChecked = true;
+    const PhoneBridgeSettings settings = manager->settings();
+    auto watcher = new QFutureWatcher<PhoneFirewallResult>(this);
+    connect(watcher, &QFutureWatcher<PhoneFirewallResult>::finished, this, [this, watcher, settings]
+    {
+        const PhoneFirewallResult firewall = watcher->result();
+        watcher->deleteLater();
+        if (!manager || !manager->isListening()) return;
+        const auto current = manager->settings();
+        if (current.address != settings.address || current.basePort != settings.basePort) return;
+        firewallResult = firewall;
+        firewallButton->setToolTip(firewall.guidance.isEmpty()
+            ? "If the phone cannot open the pairing page, check the firewall setup guide."
+            : firewall.guidance);
+    });
+    watcher->setFuture(QtConcurrent::run([settings]
+    {
+        return InspectPhoneFirewall(settings.address, settings.basePort);
+    }));
 }
 
 void PhoneScreenDialog::stopOrDisarm()
@@ -261,18 +540,47 @@ void PhoneScreenDialog::stopOrDisarm()
     updateUi();
 }
 
+void PhoneScreenDialog::regeneratePairing()
+{
+    if (manager) manager->regeneratePairing();
+    updateUi();
+}
+
 void PhoneScreenDialog::updateUi()
 {
     const bool listening = manager && manager->isListening();
     const bool connected = manager && manager->isConnected();
+    if (auto wizard = findChild<QWizard*>("phoneFirewallGuide"))
+    {
+        const auto settings = manager ? manager->settings() : PhoneBridgeSettings{};
+        if (!listening || wizard->property("phoneEndpoint").toString()
+                != settings.address + ':' + QString::number(settings.basePort)) wizard->close();
+    }
+    if (listening && !firewallChecked) checkFirewall();
+    if (!listening)
+    {
+        firewallChecked = false;
+        firewallResult = {};
+    }
     if (startup)
         status->setText(requestedForSession.load() ? "Armed — starts after Start melonDS" : "Off");
     else
         status->setText(manager ? manager->statusText() : "Unavailable");
     const QString host = interfaceBox->currentData().toString();
     address->setText(host.isEmpty() ? "Unavailable" : QString("http://%1:%2/").arg(host).arg(port->value()));
+    const QString pairUrl = listening ? manager->pairingUrl() : QString();
+    if (pairUrl != displayedPairingUrl)
+    {
+        displayedPairingUrl = pairUrl;
+        // QLabel::setText clears a pixmap, even when the new text is empty.
+        if (pairUrl.isEmpty()) pairingQr->setText("Start the server to create a pairing code.");
+        else pairingQr->setPixmap(pairingQrCode(pairUrl));
+    }
+    pairingCode->setText(listening ? manager->pairingCode() : QStringLiteral("—"));
+    connectedClient->setText(connected ? manager->connectedClientLabel() : QStringLiteral("None"));
     startButton->setEnabled(!host.isEmpty() && (startup ? !requestedForSession.load() : !listening));
     stopButton->setEnabled(startup ? requestedForSession.load() : listening);
+    firewallButton->setEnabled(listening);
     interfaceBox->setEnabled(!listening);
     port->setEnabled(!listening);
     synchronousCapture->setEnabled(!listening);
@@ -281,10 +589,16 @@ void PhoneScreenDialog::updateUi()
     {
         const PhoneBridgeMetrics m = manager->metrics();
         metrics->setText(QString("offered %1 · encoded %2 · sent %3 · acked %4 · dropped %5\n"
-                                 "JPEG %6 bytes · encode %7 ms avg · RTT %8 ms")
+                                 "JPEG %6 bytes · encode %7 ms avg · RTT %8 ms · rejected pairings %9")
                          .arg(m.framesOffered).arg(m.framesEncoded).arg(m.framesSent)
                          .arg(m.framesAcked).arg(m.framesDropped).arg(m.lastFrameBytes)
-                         .arg(m.averageEncodeMs, 0, 'f', 2).arg(m.roundTripMs, 0, 'f', 1));
+                         .arg(m.averageEncodeMs, 0, 'f', 2).arg(m.roundTripMs, 0, 'f', 1)
+                         .arg(m.authenticationFailures)
+            + QString("\nFPS: capture %1 · sent %2 · acked %3\n"
+                      "GPU %4 ms · delivery %5 ms · frame ACK %6 ms · phone decode %7 ms")
+                .arg(m.offeredFps, 0, 'f', 1).arg(m.sentFps, 0, 'f', 1).arg(m.ackedFps, 0, 'f', 1)
+                .arg(m.captureMs, 0, 'f', 1).arg(m.deliveryMs, 0, 'f', 1)
+                .arg(m.frameAckMs, 0, 'f', 1).arg(m.browserDecodeMs, 0, 'f', 1));
         const QString text = manager->logLines().join('\n');
         if (logs->toPlainText() != text)
         {
@@ -310,7 +624,7 @@ void PhoneScreenDialog::exportDiagnostics()
                                                        "widemelon-phone-diagnostics.json", "JSON (*.json)");
     if (path.isEmpty()) return;
     QString error;
-    if (!manager->exportDiagnostics(path, &error)) QMessageBox::critical(this, "Export failed", error);
+    if (!manager->exportDiagnostics(path, firewallResult, &error)) QMessageBox::critical(this, "Export failed", error);
 }
 
 namespace WideMelon

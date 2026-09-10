@@ -4,6 +4,7 @@
 #include "PhoneBridge.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 
 #include <QBuffer>
@@ -18,6 +19,7 @@
 #include <QMutexLocker>
 #include <QNetworkInterface>
 #include <QPainter>
+#include <QRegularExpression>
 #include <QSaveFile>
 #include <QTcpServer>
 #include <QTcpSocket>
@@ -31,12 +33,14 @@
 #include "Config.h"
 #include "PhoneLayout.h"
 #include "PhoneProtocol.h"
+#include "PhoneFirewall.h"
 #include "Platform.h"
 
 namespace
 {
-constexpr int kMaxHttpHeader = 8192;
 constexpr int kHeartbeatTimeoutMs = 1000;
+constexpr int kAuthenticationTimeoutMs = 3000;
+constexpr int kMaxPendingClients = 4;
 constexpr int kMaxLiveLogs = 1000;
 constexpr qint64 kMaxLogBytes = 2 * 1024 * 1024;
 
@@ -65,10 +69,20 @@ QByteArray httpReply(int status, const QByteArray& reason, const QByteArray& typ
     reply += "Content-Type: " + type + "\r\n";
     reply += "Content-Length: " + QByteArray::number(declaredLength >= 0 ? declaredLength : body.size()) + "\r\n";
     reply += "Connection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\n";
+    reply += "Referrer-Policy: no-referrer\r\nCross-Origin-Resource-Policy: same-origin\r\n";
+    reply += "Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()\r\n";
     if (!csp.isEmpty()) reply += "Content-Security-Policy: " + csp + "\r\n";
     reply += "\r\n";
     reply += body;
     return reply;
+}
+
+QString sanitizedAddress(const QHostAddress& address)
+{
+    if (address.isLoopback()) return "this computer";
+    const QStringList parts = address.toString().split('.');
+    if (parts.size() == 4) return parts[0] + '.' + parts[1] + ".x.x";
+    return "local network device";
 }
 
 }
@@ -132,17 +146,54 @@ protected:
             const bool ok = writer.write(image);
             const double elapsed = timer.nsecsElapsed() / 1000000.0;
             const QString error = ok ? QString() : writer.errorString();
-            QMetaObject::invokeMethod(owner, [this, generation, sequence, bytes, elapsed, error]
+            bool notify;
             {
-                if (!error.isEmpty())
-                    owner->log(Error, "encode", "JPEG encoding failed: " + error);
+                QMutexLocker lock(&mutex);
+                notify = !resultPending;
+                result = {generation, sequence, std::move(bytes), error, std::chrono::steady_clock::now()};
+                resultPending = true;
+            }
+            {
+                QMutexLocker lock(&owner->stateMutex);
+                auto& metrics = owner->currentMetrics;
+                if (!notify) metrics.framesDropped++;
+                if (ok)
+                {
+                    metrics.framesEncoded++;
+                    metrics.lastEncodeMs = elapsed;
+                    metrics.averageEncodeMs += (elapsed - metrics.averageEncodeMs) / double(metrics.framesEncoded);
+                }
+            }
+            // Keep just one delivery event and replace its result if the GUI
+            // thread is busy. A queued lambda per JPEG would be an unbounded queue.
+            if (notify) QMetaObject::invokeMethod(owner, [this]
+            {
+                Result ready;
+                {
+                    QMutexLocker lock(&mutex);
+                    ready = std::move(result);
+                    resultPending = false;
+                }
+                if (!ready.error.isEmpty())
+                    owner->log(Error, "encode", "JPEG encoding failed: " + ready.error);
                 else
-                    owner->encodedFrameReady(generation, sequence, bytes, elapsed);
+                    owner->encodedFrameReady(ready.generation, ready.sequence, ready.bytes,
+                        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - ready.completed).count());
             }, Qt::QueuedConnection);
         }
     }
 
 private:
+    struct Result
+    {
+        quint32 generation = 0;
+        quint32 sequence = 0;
+        QByteArray bytes;
+        QString error;
+        std::chrono::steady_clock::time_point completed;
+    };
+    Result result;
+    bool resultPending = false;
     PhoneBridgeManager* owner;
     QMutex mutex;
     QWaitCondition condition;
@@ -161,14 +212,16 @@ PhoneBridgeManager::PhoneBridgeManager(QObject* parent) : QObject(parent)
     httpServer = new QTcpServer(this);
     httpServer->setMaxPendingConnections(8);
     webSocketServer = new QWebSocketServer("WideMelon phone bridge", QWebSocketServer::NonSecureMode, this);
+    webSocketServer->setMaxPendingConnections(kMaxPendingClients);
     heartbeatTimer = new QTimer(this);
     heartbeatTimer->setInterval(250);
     testPatternTimer = new QTimer(this);
     testPatternTimer->setInterval(33);
+    testPatternTimer->setTimerType(Qt::PreciseTimer);
     encoder = std::make_unique<EncoderThread>(this);
     encoder->start();
 
-    connect(httpServer, &QTcpServer::newConnection, this, &PhoneBridgeManager::acceptHttpConnections);
+    connect(httpServer, &QTcpServer::newConnection, this, &PhoneBridgeManager::acceptTcpConnections);
     connect(webSocketServer, &QWebSocketServer::newConnection, this, &PhoneBridgeManager::acceptWebSocket);
     connect(webSocketServer, &QWebSocketServer::originAuthenticationRequired, this,
             [this](QWebSocketCorsAuthenticator* auth)
@@ -252,6 +305,7 @@ QStringList PhoneBridgeManager::availableIPv4Addresses(bool includeLoopback)
             const QHostAddress address = entry.ip();
             if (address.protocol() != QAbstractSocket::IPv4Protocol) continue;
             if (!includeLoopback && address.isLoopback()) continue;
+            if (!address.isLoopback() && !PhoneProtocol::IsPrivateIPv4(address.toIPv4Address())) continue;
             const QString text = address.toString();
             if (!result.contains(text)) result.append(text);
         }
@@ -304,9 +358,9 @@ bool PhoneBridgeManager::start()
         return false;
     }
     const QHostAddress bindAddress(currentSettings.address);
-    if (bindAddress.isNull())
+    if (bindAddress.isNull() || (!bindAddress.isLoopback() && !isPrivateAddress(currentSettings.address)))
     {
-        errorText = "The selected network address is invalid.";
+        errorText = "The selected address is not a private IPv4 interface.";
         currentStatus = "Error";
         log(Error, "network", errorText);
         emit statusChanged();
@@ -320,25 +374,18 @@ bool PhoneBridgeManager::start()
         emit statusChanged();
         return false;
     }
-    if (!webSocketServer->listen(bindAddress, currentSettings.basePort + 1))
-    {
-        errorText = "WebSocket port could not be opened: " + webSocketServer->errorString();
-        httpServer->close();
-        currentStatus = "Error";
-        log(Error, "network", errorText);
-        emit statusChanged();
-        return false;
-    }
-
+    generatePairingCredentials();
     heartbeatClock.start();
+    lastPerformanceSampleMs = lastHeartbeatCheckMs = maxHeartbeatDelayMs = 0;
+    performanceSamples = {};
+    sampledMetrics = metrics();
     lastHeartbeatMs = heartbeatClock.elapsed();
     controlRateWindowMs = lastHeartbeatMs;
     controlMessagesInWindow = 0;
-    currentStatus = "Listening";
+    currentStatus = "Waiting for paired phone";
     heartbeatTimer->start();
     if (testPattern.load()) testPatternTimer->start();
-    log(Info, "lifecycle", QString("Listening at %1 (control port %2); no authentication")
-        .arg(url()).arg(currentSettings.basePort + 1));
+    log(Info, "lifecycle", QString("Listening for a paired phone at %1").arg(url()));
     emit statusChanged();
     return true;
 }
@@ -347,9 +394,15 @@ void PhoneBridgeManager::stop()
 {
     testPatternTimer->stop();
     heartbeatTimer->stop();
-    disconnectClient();
-    if (webSocketServer->isListening()) webSocketServer->close();
     if (httpServer->isListening()) httpServer->close();
+    disconnectClient();
+    const QSet<QWebSocket*> pending = pendingClients;
+    for (QWebSocket* socket : pending)
+        closePendingClient(socket, QWebSocketProtocol::CloseCodeGoingAway, "Bridge stopped");
+    const QSet<QTcpSocket*> tcpSockets = pendingTcpSockets;
+    for (QTcpSocket* socket : tcpSockets) socket->abort();
+    pendingTcpSockets.clear();
+    clearPairingCredentials();
     if (currentStatus != "Off") log(Info, "lifecycle", "Phone bridge stopped");
     currentStatus = "Off";
     errorText.clear();
@@ -358,24 +411,33 @@ void PhoneBridgeManager::stop()
 
 void PhoneBridgeManager::disconnectClient()
 {
+    closeClient(QWebSocketProtocol::CloseCodeNormal, "Disconnected by WideMelon");
+}
+
+void PhoneBridgeManager::closeClient(QWebSocketProtocol::CloseCode code, const QString& reason)
+{
+    // Detach authorization before close() can emit signals or process more
+    // buffered messages. Every termination path restores the fallback now.
     if (client)
     {
         QWebSocket* old = client;
         client = nullptr;
-        old->close(QWebSocketProtocol::CloseCodeNormal, "Disconnected by WideMelon");
+        if (old->state() == QAbstractSocket::ConnectedState) old->close(code, reason);
         old->deleteLater();
+        log(Info, "websocket", "Phone disconnected; restored desktop bottom screen");
     }
     pendingPacket.clear();
     frameInFlight = false;
+    clientAddressLabel.clear();
     resetRemoteInput();
     setConnected(false);
-    if (isListening()) currentStatus = "Listening";
+    if (isListening()) currentStatus = "Waiting for paired phone";
     emit statusChanged();
 }
 
 bool PhoneBridgeManager::isListening() const
 {
-    return httpServer && httpServer->isListening() && webSocketServer && webSocketServer->isListening();
+    return httpServer && httpServer->isListening();
 }
 
 QString PhoneBridgeManager::statusText() const { return currentStatus; }
@@ -383,12 +445,32 @@ QString PhoneBridgeManager::url() const
 {
     return QString("http://%1:%2/").arg(currentSettings.address).arg(currentSettings.basePort);
 }
+QString PhoneBridgeManager::pairingUrl() const
+{
+    if (!isListening() || pairingCredentials.isEmpty()) return {};
+    return url() + "#pair=" + QString::fromLatin1(pairingCredentials.secret());
+}
+QString PhoneBridgeManager::pairingCode() const { return pairingCredentials.code(); }
+QString PhoneBridgeManager::connectedClientLabel() const { return clientAddressLabel; }
 QString PhoneBridgeManager::lastError() const { return errorText; }
+
+void PhoneBridgeManager::regeneratePairing()
+{
+    if (!isListening()) return;
+    closeClient(QWebSocketProtocol::CloseCodePolicyViolated, "Pairing changed");
+    const QSet<QWebSocket*> pending = pendingClients;
+    for (QWebSocket* socket : pending)
+        closePendingClient(socket, QWebSocketProtocol::CloseCodePolicyViolated, "Pairing changed");
+    generatePairingCredentials();
+    currentStatus = "Waiting for paired phone";
+    log(Info, "security", "Pairing credentials regenerated");
+    emit statusChanged();
+}
 melonDS::u32 PhoneBridgeManager::remoteKeyMask() const { return remoteKeys.load(); }
 melonDS::u32 PhoneBridgeManager::remoteHotkeyMask() const { return remoteHotkeys.load(); }
 melonDS::u32 PhoneBridgeManager::remoteTouchSnapshot() const { return remoteTouch.load(); }
 
-void PhoneBridgeManager::submitFrame(const QImage& image)
+void PhoneBridgeManager::submitFrame(const QImage& image, double captureMs)
 {
     if (!wantsFrames() || image.isNull()) return;
     const quint32 sequence = frameSequence.fetch_add(1) + 1;
@@ -396,6 +478,8 @@ void PhoneBridgeManager::submitFrame(const QImage& image)
     {
         QMutexLocker lock(&stateMutex);
         currentMetrics.framesOffered++;
+        currentMetrics.captureMs = captureMs;
+        currentMetrics.maxCaptureMs = std::max(currentMetrics.maxCaptureMs, captureMs);
         quality = currentSettings.jpegQuality;
     }
     if (encoder->submit(image, connectionGeneration.load(), sequence, quality))
@@ -447,7 +531,7 @@ QStringList PhoneBridgeManager::logLines() const
     return recentLogs;
 }
 
-bool PhoneBridgeManager::exportDiagnostics(const QString& path, QString* error) const
+bool PhoneBridgeManager::exportDiagnostics(const QString& path, const PhoneFirewallResult& firewall, QString* error) const
 {
     QJsonObject root;
     const PhoneBridgeMetrics m = metrics();
@@ -463,13 +547,26 @@ bool PhoneBridgeManager::exportDiagnostics(const QString& path, QString* error) 
     root["framesDropped"] = qint64(m.framesDropped);
     root["bytesSent"] = qint64(m.bytesSent);
     root["protocolErrors"] = qint64(m.protocolErrors);
+    root["authenticationFailures"] = qint64(m.authenticationFailures);
     root["lastEncodeMs"] = m.lastEncodeMs;
     root["averageEncodeMs"] = m.averageEncodeMs;
     root["roundTripMs"] = m.roundTripMs;
-    const QStringList lines = logLines();
+    root["performanceSamples"] = performanceSamples;
+    // The dialog supplies its asynchronous probe result. Running firewall
+    // commands here would block heartbeat and frame delivery for seconds.
+    root["firewallDetected"] = firewall.detected;
+    root["firewall"] = firewall.status == PhoneFirewallStatus::Allowed ? "allowed"
+        : firewall.status == PhoneFirewallStatus::Blocked ? "blocked" : "unknown";
+    root["possibleVpnInterface"] = IsLikelyVpnInterface(currentSettings.address);
+    QStringList lines = logLines();
+    // Lifecycle logs contain URLs, including addresses from earlier sessions.
+    // Redact those too, rather than only masking the top-level address field.
+    static const QRegularExpression ipv4("\\b(?:[0-9]{1,3}\\.){3}[0-9]{1,3}\\b");
+    for (QString& line : lines) line.replace(ipv4, "x.x.x.x");
     root["logs"] = QJsonArray::fromStringList(lines.mid(std::max(0, int(lines.size()) - 500)));
     QSaveFile file(path);
-    if (!file.open(QIODevice::WriteOnly) || file.write(QJsonDocument(root).toJson()) < 0 || !file.commit())
+    const QByteArray data = QJsonDocument(root).toJson();
+    if (!file.open(QIODevice::WriteOnly) || file.write(data) != data.size() || !file.commit())
     {
         if (error) *error = file.errorString();
         return false;
@@ -477,77 +574,102 @@ bool PhoneBridgeManager::exportDiagnostics(const QString& path, QString* error) 
     return true;
 }
 
-void PhoneBridgeManager::acceptHttpConnections()
+void PhoneBridgeManager::acceptTcpConnections()
 {
-    while (httpServer->hasPendingConnections()) handleHttpSocket(httpServer->nextPendingConnection());
+    while (httpServer->hasPendingConnections())
+    {
+        QTcpSocket* socket = httpServer->nextPendingConnection();
+        if (pendingTcpSockets.size() >= 8)
+        {
+            socket->disconnectFromHost();
+            socket->deleteLater();
+            continue;
+        }
+        handleTcpSocket(socket);
+    }
 }
 
-void PhoneBridgeManager::handleHttpSocket(QTcpSocket* socket)
+void PhoneBridgeManager::handleTcpSocket(QTcpSocket* socket)
 {
+    socket->setReadBufferSize(PhoneProtocol::MaxHttpHeader + 1);
+    socket->setSocketOption(QAbstractSocket::LowDelayOption, 1);
     socket->setParent(this);
+    if (!peerAllowed(socket->peerAddress()))
+    {
+        socket->disconnectFromHost();
+        socket->deleteLater();
+        log(Debug, "security", "Rejected a connection outside the selected local subnet");
+        return;
+    }
+    pendingTcpSockets.insert(socket);
     QTimer* timeout = new QTimer(socket);
     timeout->setSingleShot(true);
     timeout->start(3000);
-    connect(timeout, &QTimer::timeout, socket, &QTcpSocket::disconnectFromHost);
-    connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
+    connect(timeout, &QTimer::timeout, socket, &QTcpSocket::abort);
+    connect(socket, &QTcpSocket::disconnected, this, [this, socket]
+    {
+        pendingTcpSockets.remove(socket);
+        socket->deleteLater();
+    });
     connect(socket, &QTcpSocket::readyRead, this, [this, socket]
     {
-        QByteArray data = socket->property("request").toByteArray() + socket->readAll();
-        if (data.size() > kMaxHttpHeader)
-        {
-            socket->write(httpReply(431, "Request Header Fields Too Large", "text/plain", "Request too large\n"));
-            socket->disconnectFromHost();
-            return;
-        }
-        socket->setProperty("request", data);
-        const int end = data.indexOf("\r\n\r\n");
-        if (end < 0) return;
-        const QList<QByteArray> lines = data.left(end).split('\n');
-        const QList<QByteArray> request = lines.value(0).trimmed().split(' ');
-        const bool head = request.value(0) == "HEAD";
-        if (request.size() != 3 || (!head && request.value(0) != "GET"))
-        {
-            socket->write(httpReply(405, "Method Not Allowed", "text/plain", "Only GET and HEAD are supported\n"));
-            socket->disconnectFromHost();
-            return;
-        }
-        QByteArray host;
-        int hostCount = 0;
-        bool invalidBody = data.size() != end + 4;
-        for (int i = 1; i < lines.size(); i++)
-        {
-            const QByteArray line = lines[i].trimmed();
-            const QByteArray lower = line.toLower();
-            if (lower.startsWith("host:")) { host = line.mid(5).trimmed(); hostCount++; }
-            if (lower.startsWith("transfer-encoding:")) invalidBody = true;
-            if (lower.startsWith("content-length:") && line.mid(15).trimmed() != "0") invalidBody = true;
-        }
-        const QByteArray expected = currentSettings.address.toUtf8() + ':' + QByteArray::number(currentSettings.basePort);
-        if (hostCount != 1 || host != expected || invalidBody)
-        {
-            socket->write(httpReply(400, "Bad Request", "text/plain", "Invalid Host\n"));
-            socket->disconnectFromHost();
-            return;
-        }
-        QByteArray body, type;
-        const QByteArray path = request[1];
-        if (path == "/" || path == "/index.html") { body = resource(":/phone/index.html"); type = "text/html; charset=utf-8"; }
-        else if (path == "/app.js") { body = resource(":/phone/app.js"); type = "text/javascript; charset=utf-8"; }
-        else if (path == "/app.css") { body = resource(":/phone/app.css"); type = "text/css; charset=utf-8"; }
-        else if (path == "/layout.json") { body = currentSettings.layoutJson.toUtf8(); type = "application/json; charset=utf-8"; }
-        else
-        {
-            socket->write(httpReply(404, "Not Found", "text/plain", "Not found\n"));
-            socket->disconnectFromHost();
-            return;
-        }
-        const QByteArray csp = "default-src 'self'; connect-src ws://" + expected
-            + " ws://" + currentSettings.address.toUtf8() + ':' + QByteArray::number(currentSettings.basePort + 1)
-            + "; img-src 'self' blob:; style-src 'self'; script-src 'self'; frame-ancestors 'none'";
-        socket->write(httpReply(200, "OK", type, head ? QByteArray() : body, csp, body.size()));
-        socket->disconnectFromHost();
-        log(Debug, "http", QString("Served %1").arg(QString::fromUtf8(path)));
+        if (!socket->property("routed").toBool()) routeTcpSocket(socket);
     });
+    if (socket->bytesAvailable()) routeTcpSocket(socket);
+}
+
+void PhoneBridgeManager::routeTcpSocket(QTcpSocket* socket)
+{
+    const QByteArray data = socket->peek(PhoneProtocol::MaxHttpHeader + 1);
+    if (data.size() > PhoneProtocol::MaxHttpHeader)
+    {
+        socket->setProperty("routed", true);
+        socket->write(httpReply(431, "Request Header Fields Too Large", "text/plain", "Request too large\n"));
+        socket->disconnectFromHost();
+        return;
+    }
+    const QByteArray expected = currentSettings.address.toUtf8() + ':' + QByteArray::number(currentSettings.basePort);
+    const PhoneProtocol::HttpRequest request = PhoneProtocol::ParseHttpRequest(data, expected);
+    if (request.kind == PhoneProtocol::HttpRequestKind::NeedMore) return;
+    socket->setProperty("routed", true);
+    if (request.kind == PhoneProtocol::HttpRequestKind::Invalid)
+    {
+        socket->write(httpReply(400, "Bad Request", "text/plain", "Invalid request\n"));
+        socket->disconnectFromHost();
+        return;
+    }
+
+    if (request.kind == PhoneProtocol::HttpRequestKind::WebSocket)
+    {
+        if (QTimer* timeout = socket->findChild<QTimer*>()) timeout->stop();
+        pendingTcpSockets.remove(socket);
+        socket->disconnect(this);
+        webSocketServer->handleConnection(socket);
+        return;
+    }
+    serveHttpSocket(socket, request.path, request.kind == PhoneProtocol::HttpRequestKind::Head);
+}
+
+void PhoneBridgeManager::serveHttpSocket(QTcpSocket* socket, const QByteArray& path, bool head)
+{
+    socket->readAll();
+    QByteArray body, type;
+    if (path == "/" || path == "/index.html") { body = resource(":/phone/index.html"); type = "text/html; charset=utf-8"; }
+    else if (path == "/app.js") { body = resource(":/phone/app.js"); type = "text/javascript; charset=utf-8"; }
+    else if (path == "/app.css") { body = resource(":/phone/app.css"); type = "text/css; charset=utf-8"; }
+    else
+    {
+        const QByteArray errorBody = "Not found\n";
+        socket->write(httpReply(404, "Not Found", "text/plain", head ? QByteArray() : errorBody, {}, errorBody.size()));
+        socket->disconnectFromHost();
+        return;
+    }
+    const QByteArray expected = currentSettings.address.toUtf8() + ':' + QByteArray::number(currentSettings.basePort);
+    const QByteArray csp = "default-src 'self'; connect-src 'self' ws://" + expected + " wss://" + expected
+        + "; img-src 'self' blob:; style-src 'self'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
+    socket->write(httpReply(200, "OK", type, head ? QByteArray() : body, csp, body.size()));
+    socket->disconnectFromHost();
+    log(Debug, "http", QString("Served %1").arg(QString::fromUtf8(path)));
 }
 
 void PhoneBridgeManager::acceptWebSocket()
@@ -557,49 +679,164 @@ void PhoneBridgeManager::acceptWebSocket()
         QWebSocket* socket = webSocketServer->nextPendingConnection();
         socket->setMaxAllowedIncomingFrameSize(PhoneProtocol::MaxControlMessage);
         socket->setMaxAllowedIncomingMessageSize(PhoneProtocol::MaxControlMessage);
-        if (socket->requestUrl().path() != "/")
+        if (!isListening() || socket->requestUrl().path() != "/bridge" || !socket->requestUrl().query().isEmpty()
+            || !peerAllowed(socket->peerAddress()))
         {
             socket->close(QWebSocketProtocol::CloseCodePolicyViolated, "Invalid endpoint");
             socket->deleteLater();
             continue;
         }
-        if (client)
+        const qint64 now = heartbeatClock.elapsed();
+        if (client || pendingClients.size() >= kMaxPendingClients
+            || authenticationTemporarilyBlocked(socket->peerAddress(), now))
         {
-            socket->close(QWebSocketProtocol::CloseCodePolicyViolated, "A phone is already connected");
+            socket->close(QWebSocketProtocol::CloseCodePolicyViolated, "Pairing unavailable");
             socket->deleteLater();
-            log(Info, "websocket", "Rejected an additional controller");
+            log(Debug, "security", "Rejected a new pairing connection");
             continue;
         }
-        client = socket;
-        client->setParent(this);
-        connect(client, &QWebSocket::textMessageReceived, this, &PhoneBridgeManager::handleTextMessage);
-        connect(client, &QWebSocket::binaryMessageReceived, this, [this](const QByteArray&)
+        socket->setParent(this);
+        pendingClients.insert(socket);
+        connect(socket, &QWebSocket::bytesWritten, this, [this, socket]
+        {
+            if (client == socket) sendPendingFrame();
+        });
+        connect(socket, &QWebSocket::textMessageReceived, this, [this, socket](const QString& message)
+        {
+            if (pendingClients.contains(socket)) handlePendingMessage(socket, message);
+            else if (client == socket) handleTextMessage(message);
+        });
+        connect(socket, &QWebSocket::binaryMessageReceived, this, [this, socket](const QByteArray&)
         {
             { QMutexLocker lock(&stateMutex); currentMetrics.protocolErrors++; }
-            log(Debug, "protocol", "Rejected unexpected client binary message");
-            if (client) client->close(QWebSocketProtocol::CloseCodeDatatypeNotSupported, "Client binary messages are not supported");
+            if (pendingClients.contains(socket))
+                closePendingClient(socket, QWebSocketProtocol::CloseCodeDatatypeNotSupported, "Authentication required");
+            else if (client == socket)
+            {
+                closeClient(QWebSocketProtocol::CloseCodeDatatypeNotSupported, "Client binary messages are not supported");
+            }
         });
-        connect(client, &QWebSocket::disconnected, this, [this, socket]
+        connect(socket, &QWebSocket::stateChanged, this, [this, socket](QAbstractSocket::SocketState state)
         {
-            if (client == socket) client = nullptr;
-            socket->deleteLater();
-            pendingPacket.clear();
-            frameInFlight = false;
-            resetRemoteInput();
-            setConnected(false);
-            if (isListening()) currentStatus = "Listening";
-            log(Info, "websocket", "Phone disconnected; restored desktop bottom screen");
-            emit statusChanged();
+            // Qt also closes sockets internally for invalid WebSocket frames.
+            if (client == socket && state != QAbstractSocket::ConnectedState)
+                closeClient(QWebSocketProtocol::CloseCodeGoingAway, "Connection ended");
         });
-        lastHeartbeatMs = heartbeatClock.elapsed();
-        currentStatus = "Connected";
-        setConnected(true);
-        QJsonObject hello{{"v", 1}, {"type", "hello"}, {"width", 256}, {"height", 192}, {"fps", 30}};
-        hello["layout"] = QJsonDocument::fromJson(currentSettings.layoutJson.toUtf8()).object();
-        client->sendTextMessage(QString::fromUtf8(QJsonDocument(hello).toJson(QJsonDocument::Compact)));
-        log(Info, "websocket", "Phone connected (first-client controller lock acquired)");
-        emit statusChanged();
+        connect(socket, &QWebSocket::disconnected, this, [this, socket]
+        {
+            pendingClients.remove(socket);
+            if (client == socket)
+                closeClient(QWebSocketProtocol::CloseCodeGoingAway, "Connection ended");
+            socket->deleteLater();
+        });
+        QTimer::singleShot(kAuthenticationTimeoutMs, socket, [this, socket]
+        {
+            if (pendingClients.contains(socket))
+                closePendingClient(socket, QWebSocketProtocol::CloseCodePolicyViolated, "Authentication timeout");
+        });
     }
+}
+
+void PhoneBridgeManager::handlePendingMessage(QWebSocket* socket, const QString& message)
+{
+    if (message.toUtf8().size() > PhoneProtocol::MaxControlMessage)
+    {
+        recordAuthenticationFailure(socket->peerAddress(), heartbeatClock.elapsed());
+        closePendingClient(socket, QWebSocketProtocol::CloseCodeTooMuchData, "Authentication failed");
+        return;
+    }
+    QJsonParseError error;
+    const QJsonDocument document = QJsonDocument::fromJson(message.toUtf8(), &error);
+    const QJsonObject object = document.object();
+    const QString credential = object.value("credential").toString();
+    const bool validShape = error.error == QJsonParseError::NoError && document.isObject()
+        && object.value("v").toInt() == PhoneProtocol::Version
+        && object.value("type").toString() == "auth"
+        && object.value("credential").isString() && credential.size() <= 64;
+    const bool validCredential = pairingCredentials.matches(credential);
+    if (!validShape || !validCredential || authenticationTemporarilyBlocked(socket->peerAddress(), heartbeatClock.elapsed()))
+    {
+        recordAuthenticationFailure(socket->peerAddress(), heartbeatClock.elapsed());
+        closePendingClient(socket, QWebSocketProtocol::CloseCodePolicyViolated, "Authentication failed");
+        return;
+    }
+    authenticateClient(socket);
+}
+
+void PhoneBridgeManager::authenticateClient(QWebSocket* socket)
+{
+    if (!pendingClients.remove(socket) || client)
+    {
+        socket->close(QWebSocketProtocol::CloseCodePolicyViolated, "Pairing unavailable");
+        return;
+    }
+    client = socket;
+    clientAddressLabel = sanitizedAddress(socket->peerAddress());
+    lastHeartbeatMs = heartbeatClock.elapsed();
+    lastPingSentMs = 0;
+    controlRateWindowMs = lastHeartbeatMs;
+    controlMessagesInWindow = 0;
+    currentStatus = "Connected to paired phone";
+    setConnected(true);
+    QJsonObject hello{{"v", PhoneProtocol::Version}, {"type", "hello"}, {"width", 256}, {"height", 192}, {"fps", 30}};
+    hello["layout"] = QJsonDocument::fromJson(currentSettings.layoutJson.toUtf8()).object();
+    client->sendTextMessage(QString::fromUtf8(QJsonDocument(hello).toJson(QJsonDocument::Compact)));
+    log(Info, "security", "Paired phone authenticated (" + clientAddressLabel + ")");
+    emit statusChanged();
+}
+
+void PhoneBridgeManager::closePendingClient(QWebSocket* socket, QWebSocketProtocol::CloseCode code, const QString& reason)
+{
+    pendingClients.remove(socket);
+    socket->close(code, reason);
+    socket->deleteLater();
+}
+
+bool PhoneBridgeManager::peerAllowed(const QHostAddress& peer) const
+{
+    if (peer.protocol() != QAbstractSocket::IPv4Protocol) return false;
+    const QHostAddress selected(currentSettings.address);
+    if (selected.isLoopback()) return peer.isLoopback();
+    for (const QNetworkInterface& interface : QNetworkInterface::allInterfaces())
+    {
+        if (!(interface.flags() & QNetworkInterface::IsUp)
+            || !(interface.flags() & QNetworkInterface::IsRunning)) continue;
+        for (const QNetworkAddressEntry& entry : interface.addressEntries())
+        {
+            if (entry.ip() == selected && entry.prefixLength() >= 0)
+                return PhoneProtocol::IsSameIPv4Subnet(peer.toIPv4Address(), entry.ip().toIPv4Address(),
+                                                       entry.prefixLength());
+        }
+    }
+    return false;
+}
+
+bool PhoneBridgeManager::authenticationTemporarilyBlocked(const QHostAddress& peer, qint64 now)
+{
+    return authenticationLimiter.isBlocked(peer.toString(), now);
+}
+
+void PhoneBridgeManager::recordAuthenticationFailure(const QHostAddress& peer, qint64 now)
+{
+    authenticationLimiter.recordFailure(peer.toString(), now);
+    {
+        QMutexLocker lock(&stateMutex);
+        currentMetrics.authenticationFailures++;
+    }
+    log(Debug, "security", "Rejected invalid pairing credentials from " + sanitizedAddress(peer));
+}
+
+void PhoneBridgeManager::generatePairingCredentials()
+{
+    clearPairingCredentials();
+    pairingCredentials.regenerate();
+    authenticationLimiter.clear();
+    emit pairingChanged();
+}
+
+void PhoneBridgeManager::clearPairingCredentials()
+{
+    pairingCredentials.clear();
 }
 
 void PhoneBridgeManager::handleTextMessage(const QString& message)
@@ -613,13 +850,13 @@ void PhoneBridgeManager::handleTextMessage(const QString& message)
     if (++controlMessagesInWindow > 240)
     {
         log(Error, "protocol", "Control-message rate limit exceeded");
-        if (client) client->close(QWebSocketProtocol::CloseCodePolicyViolated, "Message rate limit");
+        closeClient(QWebSocketProtocol::CloseCodePolicyViolated, "Message rate limit");
         return;
     }
     if (message.toUtf8().size() > PhoneProtocol::MaxControlMessage)
     {
         log(Error, "protocol", "Oversized control message");
-        if (client) client->close(QWebSocketProtocol::CloseCodeTooMuchData, "Control message too large");
+        closeClient(QWebSocketProtocol::CloseCodeTooMuchData, "Control message too large");
         return;
     }
     QJsonParseError parseError;
@@ -628,17 +865,18 @@ void PhoneBridgeManager::handleTextMessage(const QString& message)
     {
         { QMutexLocker lock(&stateMutex); currentMetrics.protocolErrors++; }
         log(Debug, "protocol", "Rejected malformed JSON");
+        closeClient(QWebSocketProtocol::CloseCodeProtocolError, "Protocol violation");
         return;
     }
     const QJsonObject object = document.object();
-    if (object.value("v").toInt() != 1 || !object.value("type").isString())
+    if (object.value("v").toInt() != PhoneProtocol::Version || !object.value("type").isString())
     {
         { QMutexLocker lock(&stateMutex); currentMetrics.protocolErrors++; }
         log(Debug, "protocol", "Rejected unknown protocol version or message type");
+        closeClient(QWebSocketProtocol::CloseCodeProtocolError, "Protocol violation");
         return;
     }
     const QString type = object.value("type").toString();
-    lastHeartbeatMs = messageTime;
     if (type == "input")
     {
         melonDS::u32 keys = 0, hotkeys = 0, touch = 0;
@@ -647,45 +885,83 @@ void PhoneBridgeManager::handleTextMessage(const QString& message)
         {
             { QMutexLocker lock(&stateMutex); currentMetrics.protocolErrors++; }
             log(Debug, "protocol", "Rejected invalid input snapshot");
+            closeClient(QWebSocketProtocol::CloseCodeProtocolError, "Protocol violation");
             return;
         }
         lastInputSequence = sequence;
+        lastHeartbeatMs = messageTime;
         remoteKeys.store(keys);
         remoteHotkeys.store(hotkeys);
         remoteTouch.store(touch);
+        { QMutexLocker lock(&stateMutex); currentMetrics.inputMessages++; }
         log(Trace, "input", QString("active-low buttons=0x%1 hotkeys=0x%2 touch=%3")
             .arg(keys, 3, 16, QLatin1Char('0')).arg(hotkeys, 6, 16, QLatin1Char('0'))
             .arg(bool(touch & 0x80000000U)));
     }
     else if (type == "frameAck")
     {
-        const quint32 sequence = quint32(object.value("seq").toDouble());
+        const double sequenceValue = object.value("seq").toDouble(-1);
+        if (!object.value("seq").isDouble() || sequenceValue < 1 || sequenceValue > 0xFFFFFFFFU
+            || sequenceValue != quint32(sequenceValue))
+        {
+            { QMutexLocker lock(&stateMutex); currentMetrics.protocolErrors++; }
+            closeClient(QWebSocketProtocol::CloseCodeProtocolError, "Protocol violation");
+            return;
+        }
+        lastHeartbeatMs = messageTime;
+        const quint32 sequence = quint32(sequenceValue);
         if (frameInFlight && sequence == inFlightSequence)
         {
             frameInFlight = false;
-            { QMutexLocker lock(&stateMutex); currentMetrics.framesAcked++; }
+            {
+                QMutexLocker lock(&stateMutex);
+                currentMetrics.framesAcked++;
+                currentMetrics.frameAckMs = messageTime - inFlightSentMs;
+                currentMetrics.maxFrameAckMs = std::max(currentMetrics.maxFrameAckMs, currentMetrics.frameAckMs);
+                // Optional telemetry from newer clients. Invalid telemetry is
+                // ignored; it must not affect acceptance or ACK/backpressure.
+                const auto decodeValue = object.value("decodeMs");
+                const double decodeMs = decodeValue.toDouble(-1);
+                if (decodeValue.isDouble() && decodeMs >= 0 && decodeMs <= 10000)
+                {
+                    currentMetrics.browserDecodeMs = decodeMs;
+                    currentMetrics.maxBrowserDecodeMs = std::max(currentMetrics.maxBrowserDecodeMs, decodeMs);
+                }
+            }
             sendPendingFrame();
         }
     }
     else if (type == "pong")
     {
-        const qint64 sent = qint64(object.value("sent").toDouble());
-        if (sent > 0)
+        const double sentValue = object.value("sent").toDouble(-1);
+        if (object.value("sent").isDouble() && lastPingSentMs > 0 && sentValue == double(lastPingSentMs))
         {
+            lastHeartbeatMs = messageTime;
             QMutexLocker lock(&stateMutex);
-            currentMetrics.roundTripMs = std::max<qint64>(0, heartbeatClock.elapsed() - sent);
+            currentMetrics.roundTripMs = std::max<qint64>(0, heartbeatClock.elapsed() - lastPingSentMs);
+        }
+        else
+        {
+            { QMutexLocker lock(&stateMutex); currentMetrics.protocolErrors++; }
+            closeClient(QWebSocketProtocol::CloseCodeProtocolError, "Protocol violation");
         }
     }
-    else if (type != "hello" && type != "visibility")
+    else if (type == "visibility" && object.value("hidden").isBool())
+    {
+        lastHeartbeatMs = messageTime;
+        if (object.value("hidden").toBool()) resetRemoteInput();
+    }
+    else
     {
         { QMutexLocker lock(&stateMutex); currentMetrics.protocolErrors++; }
-        log(Debug, "protocol", "Rejected unknown message " + type);
+        log(Debug, "protocol", "Rejected unexpected authenticated-client message");
+        closeClient(QWebSocketProtocol::CloseCodeProtocolError, "Protocol violation");
     }
-    if (type == "visibility" && object.value("hidden").toBool()) resetRemoteInput();
 }
 
 void PhoneBridgeManager::checkHeartbeat()
 {
+    samplePerformance(heartbeatClock.elapsed());
     if (isListening() && !QHostAddress(currentSettings.address).isLoopback()
         && !availableIPv4Addresses(false).contains(currentSettings.address))
     {
@@ -698,23 +974,59 @@ void PhoneBridgeManager::checkHeartbeat()
     if (frameInFlight && now - inFlightSentMs > 500)
     {
         frameInFlight = false;
-        { QMutexLocker lock(&stateMutex); currentMetrics.framesDropped++; }
+        { QMutexLocker lock(&stateMutex); currentMetrics.framesDropped++; currentMetrics.acknowledgementTimeouts++; }
         log(Debug, "stream", "Frame acknowledgement timed out; sending latest frame");
         sendPendingFrame();
     }
     if (now - lastHeartbeatMs > kHeartbeatTimeoutMs)
     {
         log(Error, "websocket", "Heartbeat timed out; releasing all phone input");
-        client->close(QWebSocketProtocol::CloseCodeGoingAway, "Heartbeat timeout");
-        resetRemoteInput();
+        closeClient(QWebSocketProtocol::CloseCodeGoingAway, "Heartbeat timeout");
         return;
     }
     if (now - lastPingSentMs >= 500)
     {
         lastPingSentMs = now;
-        QJsonObject ping{{"v", 1}, {"type", "ping"}, {"sent", double(now)}};
+        QJsonObject ping{{"v", PhoneProtocol::Version}, {"type", "ping"}, {"sent", double(now)}};
         client->sendTextMessage(QString::fromUtf8(QJsonDocument(ping).toJson(QJsonDocument::Compact)));
     }
+}
+
+void PhoneBridgeManager::samplePerformance(qint64 now)
+{
+    maxHeartbeatDelayMs = std::max(maxHeartbeatDelayMs, std::max<qint64>(0, now - lastHeartbeatCheckMs - 250));
+    lastHeartbeatCheckMs = now;
+    const qint64 elapsed = now - lastPerformanceSampleMs;
+    if (elapsed < 1000) return;
+    PhoneBridgeMetrics m = metrics();
+    const double seconds = elapsed / 1000.0;
+    m.offeredFps = (m.framesOffered - sampledMetrics.framesOffered) / seconds;
+    m.sentFps = (m.framesSent - sampledMetrics.framesSent) / seconds;
+    m.ackedFps = (m.framesAcked - sampledMetrics.framesAcked) / seconds;
+    {
+        QMutexLocker lock(&stateMutex);
+        currentMetrics.offeredFps = m.offeredFps;
+        currentMetrics.sentFps = m.sentFps;
+        currentMetrics.ackedFps = m.ackedFps;
+    }
+    // Bounded diagnostic history only; this does not buffer or schedule frames.
+    performanceSamples.append(QJsonObject{
+        {"timeMs", double(now)}, {"sampleMs", double(elapsed)},
+        {"offeredFps", m.offeredFps}, {"sentFps", m.sentFps}, {"ackedFps", m.ackedFps},
+        {"encodedFps", (m.framesEncoded - sampledMetrics.framesEncoded) / seconds},
+        {"inputsPerSecond", (m.inputMessages - sampledMetrics.inputMessages) / seconds},
+        {"captureMs", m.captureMs}, {"maxCaptureMs", m.maxCaptureMs}, {"encodeMs", m.lastEncodeMs},
+        {"deliveryMs", m.deliveryMs}, {"maxDeliveryMs", m.maxDeliveryMs},
+        {"frameAckMs", m.frameAckMs}, {"maxFrameAckMs", m.maxFrameAckMs},
+        {"browserDecodeMs", m.browserDecodeMs}, {"maxBrowserDecodeMs", m.maxBrowserDecodeMs},
+        {"guiDelayMs", double(maxHeartbeatDelayMs)}, {"socketQueuedBytes", double(client ? client->bytesToWrite() : 0)},
+        {"acknowledgementTimeouts", double(m.acknowledgementTimeouts - sampledMetrics.acknowledgementTimeouts)},
+        {"jpegBytes", m.lastFrameBytes}
+    });
+    if (performanceSamples.size() > 60) performanceSamples.removeFirst();
+    sampledMetrics = m;
+    lastPerformanceSampleMs = now;
+    maxHeartbeatDelayMs = 0;
 }
 
 void PhoneBridgeManager::emitTestPattern()
@@ -733,17 +1045,16 @@ void PhoneBridgeManager::emitTestPattern()
 }
 
 void PhoneBridgeManager::encodedFrameReady(quint32 generation, quint32 sequence,
-                                           const QByteArray& jpeg, double encodeMs)
+                                           const QByteArray& jpeg, double deliveryMs)
 {
     if (!connected.load() || generation != connectionGeneration.load()) return;
     QByteArray packet = PhoneProtocol::BuildFrame(sequence,
         quint64(heartbeatClock.nsecsElapsed() / 1000), jpeg);
     {
         QMutexLocker lock(&stateMutex);
-        currentMetrics.framesEncoded++;
-        currentMetrics.lastEncodeMs = encodeMs;
-        currentMetrics.averageEncodeMs += (encodeMs - currentMetrics.averageEncodeMs) / double(currentMetrics.framesEncoded);
         currentMetrics.lastFrameBytes = jpeg.size();
+        currentMetrics.deliveryMs = deliveryMs;
+        currentMetrics.maxDeliveryMs = std::max(currentMetrics.maxDeliveryMs, deliveryMs);
     }
     if (frameInFlight)
     {
@@ -759,7 +1070,7 @@ void PhoneBridgeManager::encodedFrameReady(quint32 generation, quint32 sequence,
 
 void PhoneBridgeManager::sendPendingFrame()
 {
-    if (!client || pendingPacket.isEmpty() || frameInFlight) return;
+    if (!client || pendingPacket.isEmpty() || frameInFlight || client->bytesToWrite() != 0) return;
     const QByteArray packet = std::move(pendingPacket);
     pendingPacket.clear();
     inFlightSequence = pendingSequence;
@@ -774,7 +1085,7 @@ void PhoneBridgeManager::sendPendingFrame()
 void PhoneBridgeManager::sendLayout()
 {
     if (!client) return;
-    QJsonObject message{{"v", 1}, {"type", "layout"}};
+    QJsonObject message{{"v", PhoneProtocol::Version}, {"type", "layout"}};
     message["layout"] = QJsonDocument::fromJson(currentSettings.layoutJson.toUtf8()).object();
     client->sendTextMessage(QString::fromUtf8(QJsonDocument(message).toJson(QJsonDocument::Compact)));
 }

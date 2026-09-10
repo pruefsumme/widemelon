@@ -1009,7 +1009,7 @@ void ScreenPanelGL::initOpenGL()
     }
     glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    if (emuInstance->getPhoneBridge())
+    if (mainWindow->getWindowID() == 0 && emuInstance->getPhoneBridge())
         emuInstance->getPhoneBridge()->setCaptureAvailable(phoneCaptureComplete,
             "OpenGL could not create the phone capture framebuffer; desktop fallback retained");
 
@@ -1072,7 +1072,8 @@ void ScreenPanelGL::deinitOpenGL()
     glContext->MakeCurrent();
 
     glDeleteTextures(1, &screenTexture);
-    if (emuInstance->getPhoneBridge()) emuInstance->getPhoneBridge()->setCaptureAvailable(false);
+    if (mainWindow->getWindowID() == 0 && emuInstance->getPhoneBridge())
+        emuInstance->getPhoneBridge()->setCaptureAvailable(false);
     glDeleteBuffers(2, phoneCapturePBO);
     glDeleteFramebuffers(1, &phoneSourceFramebuffer);
     glDeleteFramebuffers(1, &phoneCaptureFramebuffer);
@@ -1081,6 +1082,7 @@ void ScreenPanelGL::deinitOpenGL()
     phoneCapturePBO[0] = phoneCapturePBO[1] = 0;
     phoneCapturePrimed = false;
     phoneCaptureMapWarned = false;
+    phoneFramePacer.reset();
 
     glDeleteVertexArrays(1, &screenVertexArray);
     glDeleteBuffers(1, &screenVertexBuffer);
@@ -1327,12 +1329,18 @@ void ScreenPanelGL::capturePhoneFrame(GLuint sourceTexture, int sourceWidth, int
 {
     PhoneBridgeManager* bridge = emuInstance->getPhoneBridge();
     if (!bridge || !bridge->hasUsableClient() || bridge->testPatternEnabled()
-        || mainWindow->getWindowID() != 0 || sourceTexture == 0) return;
+        || mainWindow->getWindowID() != 0 || sourceTexture == 0)
+    {
+        // Reconnecting or leaving the test pattern must not publish a PBO
+        // captured during the preceding phone session.
+        phoneCapturePrimed = false;
+        phoneFramePacer.reset();
+        return;
+    }
 
     const qint64 now = std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
-    if (phoneLastCaptureNs != 0 && now - phoneLastCaptureNs < 33333333) return;
-    phoneLastCaptureNs = now;
+    if (!phoneFramePacer.due(now)) return;
 
     GLint oldReadFramebuffer = 0, oldDrawFramebuffer = 0;
     GLint oldReadBuffer = 0, oldDrawBuffer = 0, oldPackBuffer = 0, oldPackAlignment = 0;
@@ -1405,7 +1413,12 @@ void ScreenPanelGL::capturePhoneFrame(GLuint sourceTexture, int sourceWidth, int
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, oldDrawFramebuffer);
     glDrawBuffer(oldDrawBuffer);
 
-    if (haveFrame) bridge->submitFrame(frame);
+    if (haveFrame)
+    {
+        const qint64 captureEnd = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+        bridge->submitFrame(frame, (captureEnd - now) / 1000000.0);
+    }
 }
 
 qreal ScreenPanelGL::devicePixelRatioFromScreen() const

@@ -32,6 +32,7 @@
 
 #include "glad/glad.h"
 #include "ScreenLayout.h"
+#include "PhoneFramePacer.h"
 #include "duckstation/gl/context.h"
 
 
@@ -247,7 +248,7 @@ private:
     int phoneCapturePBOIndex = 0;
     bool phoneCapturePrimed = false;
     bool phoneCaptureMapWarned = false;
-    qint64 phoneLastCaptureNs = 0;
+    PhoneFramePacer phoneFramePacer;
 
     void capturePhoneFrame(GLuint sourceTexture, int sourceWidth, int sourceHeight);
 

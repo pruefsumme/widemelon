@@ -12,15 +12,107 @@
 
 namespace PhoneProtocol
 {
-constexpr int Version = 1;
+constexpr int Version = 2;
 constexpr int MaxControlMessage = 4096;
 constexpr int FrameHeaderSize = 24;
+constexpr int MaxHttpHeader = 8192;
+
+enum class HttpRequestKind
+{
+    NeedMore,
+    Invalid,
+    Get,
+    Head,
+    WebSocket,
+};
+
+struct HttpRequest
+{
+    HttpRequestKind kind = HttpRequestKind::Invalid;
+    QByteArray path;
+};
+
+inline bool HeaderContainsToken(const QByteArray& value, const QByteArray& token)
+{
+    for (const QByteArray& part : value.toLower().split(','))
+        if (part.trimmed() == token) return true;
+    return false;
+}
+
+inline HttpRequest ParseHttpRequest(const QByteArray& data, const QByteArray& expectedHost)
+{
+    if (data.size() > MaxHttpHeader) return {};
+    const int end = data.indexOf("\r\n\r\n");
+    if (end < 0) return {HttpRequestKind::NeedMore, {}};
+    const QList<QByteArray> lines = data.left(end).split('\n');
+    const QList<QByteArray> first = lines.value(0).chopped(1).split(' ');
+    if (first.size() != 3 || first[2] != "HTTP/1.1") return {};
+
+    QByteArray host, origin, upgrade, connection;
+    int hostCount = 0, originCount = 0, upgradeCount = 0, connectionCount = 0;
+    int lengthCount = 0, keyCount = 0, versionCount = 0;
+    bool invalidBody = data.size() != end + 4;
+    for (int i = 1; i < lines.size(); i++)
+    {
+        // Reject folded fields, whitespace before ':', bare LF, and control
+        // characters so our admission check and Qt's upgrade parser agree.
+        QByteArray line = lines[i];
+        if (i < lines.size() - 1)
+        {
+            if (!line.endsWith('\r')) return {};
+            line.chop(1);
+        }
+        const int colon = line.indexOf(':');
+        if (colon <= 0) return {};
+        for (int j = 0; j < line.size(); j++)
+        {
+            const unsigned char c = static_cast<unsigned char>(line[j]);
+            if (j < colon)
+            {
+                if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+                    || (c >= '0' && c <= '9') || QByteArray("!#$%&'*+-.^_`|~").contains(char(c)))) return {};
+            }
+            else if ((c < 32 && c != '\t') || c == 127) return {};
+        }
+        const QByteArray lower = line.toLower();
+        if (lower.startsWith("host:")) { host = line.mid(5).trimmed(); hostCount++; }
+        else if (lower.startsWith("origin:")) { origin = line.mid(7).trimmed(); originCount++; }
+        else if (lower.startsWith("upgrade:")) { upgrade = line.mid(8).trimmed().toLower(); upgradeCount++; }
+        else if (lower.startsWith("connection:")) { connection = line.mid(11).trimmed(); connectionCount++; }
+        else if (lower.startsWith("transfer-encoding:")) invalidBody = true;
+        else if (lower.startsWith("content-length:"))
+        {
+            if (++lengthCount > 1 || line.mid(15).trimmed() != "0") invalidBody = true;
+        }
+        else if (lower.startsWith("sec-websocket-key:") && ++keyCount > 1) return {};
+        else if (lower.startsWith("sec-websocket-version:") && ++versionCount > 1) return {};
+    }
+    if (hostCount != 1 || host != expectedHost || invalidBody) return {};
+
+    const bool upgradeRequested = upgradeCount != 0 || HeaderContainsToken(connection, "upgrade");
+    if (first[0] == "GET" && first[1] == "/bridge" && upgradeCount == 1 && connectionCount == 1
+        && upgrade == "websocket" && HeaderContainsToken(connection, "upgrade"))
+    {
+        if (originCount != 1 || origin != "http://" + expectedHost) return {};
+        return {HttpRequestKind::WebSocket, first[1]};
+    }
+    if (upgradeRequested || originCount != 0) return {};
+    if (first[0] == "GET") return {HttpRequestKind::Get, first[1]};
+    if (first[0] == "HEAD") return {HttpRequestKind::Head, first[1]};
+    return {};
+}
 
 inline bool IsPrivateIPv4(quint32 address)
 {
     return (address & 0xFF000000U) == 0x0A000000U
         || (address & 0xFFF00000U) == 0xAC100000U
         || (address & 0xFFFF0000U) == 0xC0A80000U;
+}
+
+inline bool IsSameIPv4Subnet(quint32 address, quint32 networkAddress, int prefixLength)
+{
+    if (prefixLength < 0 || prefixLength > 32) return false;
+    return QHostAddress(address).isInSubnet(QHostAddress(networkAddress), prefixLength);
 }
 
 inline bool ParseInput(const QJsonObject& object, melonDS::u32& activeLowKeys,
@@ -57,7 +149,7 @@ inline QByteArray BuildFrame(quint32 sequence, quint64 capturedUs, const QByteAr
 {
     QByteArray packet;
     packet.reserve(FrameHeaderSize + jpeg.size());
-    packet.append("WMF1", 4);
+    packet.append("WMF2", 4);
     const quint32 littleSequence = qToLittleEndian(sequence);
     const quint64 littleTime = qToLittleEndian(capturedUs);
     const quint16 littleWidth = qToLittleEndian<quint16>(256);

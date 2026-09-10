@@ -9,6 +9,9 @@
   const canvas = document.getElementById('screen');
   const context = canvas.getContext('2d', {alpha: false});
   const dpad = document.getElementById('dpad');
+  const pairing = document.getElementById('pairing');
+  const pairingForm = document.getElementById('pairing-form');
+  const pairingCode = document.getElementById('pairing-code');
   const pointers = new Map();
   let socket = null;
   let buttons = 0;
@@ -19,15 +22,47 @@
   let lastFpsAt = performance.now();
   let displayedFps = 0;
   let inputSequence = 0;
+  let credential = '';
+  let authenticated = false;
+  let reconnectTimer = null;
+  let inputTimer = null;
+  let lastInputSentAt = -Infinity;
+  let touchPointerId = null;
+  let pendingFrame = null;
+  let decoding = false;
 
-  function send(type, extra = {}) {
-    if (socket && socket.readyState === WebSocket.OPEN)
-      socket.send(JSON.stringify({v: 1, type, ...extra}));
+  function rememberCredential(value) {
+    // Storage can be disabled even when the page and WebSocket are usable.
+    try {
+      if (value) sessionStorage.setItem('widemelonPairing', value);
+      else sessionStorage.removeItem('widemelonPairing');
+    } catch (_) {}
   }
 
-  function sendInput() { send('input', {seq: ++inputSequence, buttons, hotkeys, touch}); }
+  function send(type, extra = {}) {
+    if (authenticated && socket && socket.readyState === WebSocket.OPEN)
+      socket.send(JSON.stringify({v: 2, type, ...extra}));
+  }
 
-  function recalculateButtons() {
+  function sendInputNow() {
+    clearTimeout(inputTimer);
+    inputTimer = null;
+    if (authenticated) {
+      lastInputSentAt = performance.now();
+      send('input', {seq: ++inputSequence, buttons, hotkeys, touch});
+    }
+  }
+
+  function sendInput() {
+    // Send normal 60/120 Hz movement immediately. Faster event bursts keep
+    // only the newest position, with at most 8 ms of added scheduling delay.
+    // Button and touch transitions bypass this motion-only rate limit.
+    const delay = 8 - (performance.now() - lastInputSentAt);
+    if (delay <= 0) sendInputNow();
+    else if (inputTimer === null) inputTimer = setTimeout(sendInputNow, delay);
+  }
+
+  function recalculateButtons(immediate = false) {
     let value = 0;
     let hotkeyValue = 0;
     for (const pointer of pointers.values()) {
@@ -42,7 +77,8 @@
         : (hotkeys & (1 << Number(el.dataset.hotkey))) !== 0;
       el.classList.toggle('active', active);
     });
-    sendInput();
+    if (immediate) sendInputNow();
+    else sendInput();
   }
 
   function bindButton(button) {
@@ -52,13 +88,16 @@
       event.preventDefault();
       button.setPointerCapture(event.pointerId);
       pointers.set(event.pointerId, {
+        element: button,
         bits: button.dataset.button === undefined ? 0 : 1 << Number(button.dataset.button),
         hotkeys: button.dataset.hotkey === undefined ? 0 : 1 << Number(button.dataset.hotkey)
       });
-      recalculateButtons();
+      recalculateButtons(true);
     });
     const release = event => {
-      if (pointers.delete(event.pointerId)) recalculateButtons();
+      if (pointers.get(event.pointerId)?.element !== button) return;
+      pointers.delete(event.pointerId);
+      recalculateButtons(true);
     };
     button.addEventListener('pointerup', release);
     button.addEventListener('pointercancel', release);
@@ -68,6 +107,7 @@
 
   function applyLayout(layout) {
     if (!layout || (layout.version !== 1 && layout.version !== 2) || !Array.isArray(layout.items)) return;
+    releaseAll();
     hud.hidden = layout.showHud === false;
     document.querySelectorAll('[data-layout-custom]').forEach(element => element.remove());
     document.querySelectorAll('[data-layout-id]').forEach(element => { element.hidden = true; });
@@ -106,11 +146,6 @@
     }
   }
 
-  fetch('layout.json', {cache: 'no-store'})
-    .then(response => response.ok ? response.json() : Promise.reject())
-    .then(applyLayout)
-    .catch(() => {});
-
   function dpadBits(event) {
     const rect = dpad.getBoundingClientRect();
     const x = (event.clientX - rect.left) / rect.width - 0.5;
@@ -148,20 +183,25 @@
   dpad.addEventListener('pointerdown', event => {
     event.preventDefault();
     dpad.setPointerCapture(event.pointerId);
-    pointers.set(event.pointerId, {bits: dpadBits(event), dpad: true});
+    pointers.set(event.pointerId, {bits: dpadBits(event), element: dpad});
     updateDirectionalVisual(event);
     dpad.classList.add('active');
-    recalculateButtons();
+    recalculateButtons(true);
   });
   dpad.addEventListener('pointermove', event => {
     const value = pointers.get(event.pointerId);
-    if (!value || !value.dpad) return;
-    value.bits = dpadBits(event);
+    if (!value || value.element !== dpad) return;
     updateDirectionalVisual(event);
+    const bits = dpadBits(event);
+    if (value.bits === bits) return;
+    value.bits = bits;
     recalculateButtons();
   });
   const releaseDpad = event => {
-    if (pointers.delete(event.pointerId)) recalculateButtons();
+    if (pointers.get(event.pointerId)?.element !== dpad) return;
+    pointers.delete(event.pointerId);
+    recalculateButtons(true);
+    if ([...pointers.values()].some(pointer => pointer.element === dpad)) return;
     dpad.classList.remove('active');
     dpad.style.setProperty('--stick-x', '0px');
     dpad.style.setProperty('--stick-y', '0px');
@@ -170,26 +210,32 @@
   dpad.addEventListener('pointercancel', releaseDpad);
   dpad.addEventListener('lostpointercapture', releaseDpad);
 
-  function updateTouch(event, active) {
+  function updateTouch(event, active, immediate = false) {
     const rect = canvas.getBoundingClientRect();
     const x = Math.floor((event.clientX - rect.left) * 256 / rect.width);
     const y = Math.floor((event.clientY - rect.top) * 192 / rect.height);
     touch = {active, x: Math.max(0, Math.min(255, x)), y: Math.max(0, Math.min(191, y))};
-    sendInput();
+    if (immediate) sendInputNow();
+    else sendInput();
   }
   canvas.addEventListener('pointerdown', event => {
     event.preventDefault();
+    // A DS has one stylus. Another finger must not move or release the active
+    // stroke, including when the first finger is holding a virtual button.
+    if (touchPointerId !== null) return;
+    touchPointerId = event.pointerId;
     canvas.setPointerCapture(event.pointerId);
-    pointers.set(event.pointerId, {touch: true});
-    updateTouch(event, true);
+    updateTouch(event, true, true);
   });
   canvas.addEventListener('pointermove', event => {
-    if (pointers.get(event.pointerId)?.touch) updateTouch(event, true);
+    if (event.pointerId !== touchPointerId) return;
+    const samples = event.getCoalescedEvents?.();
+    updateTouch(samples?.length ? samples[samples.length - 1] : event, true);
   });
   const releaseTouch = event => {
-    if (!pointers.get(event.pointerId)?.touch) return;
-    pointers.delete(event.pointerId);
-    updateTouch(event, false);
+    if (event.pointerId !== touchPointerId) return;
+    touchPointerId = null;
+    updateTouch(event, false, true);
   };
   canvas.addEventListener('pointerup', releaseTouch);
   canvas.addEventListener('pointercancel', releaseTouch);
@@ -200,17 +246,37 @@
     buttons = 0;
     hotkeys = 0;
     touch = {active: false, x: 0, y: 0};
-    recalculateButtons();
+    touchPointerId = null;
+    recalculateButtons(true);
+    dpad.classList.remove('active');
+    dpad.style.setProperty('--stick-x', '0px');
+    dpad.style.setProperty('--stick-y', '0px');
     send('visibility', {hidden: true});
   }
 
-  async function displayFrame(buffer) {
+  async function displayFrame(buffer, source) {
+    pendingFrame = {buffer, source};
+    if (decoding) return;
+    decoding = true;
+    try {
+      while (pendingFrame) {
+        const next = pendingFrame;
+        pendingFrame = null;
+        await decodeFrame(next.buffer, next.source);
+      }
+    } finally { decoding = false; }
+  }
+
+  async function decodeFrame(buffer, source) {
+    if (source !== socket || !authenticated) return;
     if (buffer.byteLength < 24) return;
     const view = new DataView(buffer);
-    if (view.getUint32(0, false) !== 0x574d4631 || view.getUint8(20) !== 1) return;
+    if (view.getUint32(0, false) !== 0x574d4632 || view.getUint8(20) !== 1) return;
     const sequence = view.getUint32(4, true);
+    const decodeStarted = performance.now();
     try {
-      const bitmap = await createImageBitmap(new Blob([buffer.slice(24)], {type: 'image/jpeg'}));
+      const bitmap = await createImageBitmap(new Blob([new Uint8Array(buffer, 24)], {type: 'image/jpeg'}));
+      if (source !== socket || !authenticated) { bitmap.close(); return; }
       context.imageSmoothingEnabled = false;
       context.drawImage(bitmap, 0, 0, 256, 192);
       bitmap.close();
@@ -222,42 +288,75 @@
         lastFpsAt = now;
         metrics.textContent = `${displayedFps.toFixed(1)} FPS · frame ${sequence}`;
       }
-      send('frameAck', {seq: sequence});
+      send('frameAck', {seq: sequence, decodeMs: Math.round((performance.now() - decodeStarted) * 10) / 10});
     } catch (error) {
+      if (source !== socket || !authenticated) return;
       metrics.textContent = `Decode error: ${error.message}`;
       send('frameAck', {seq: sequence});
     }
   }
 
   function connect() {
-    const url = `ws://${location.hostname}:${Number(location.port || 80) + 1}/`;
-    status.textContent = 'Connecting…';
-    socket = new WebSocket(url);
-    socket.binaryType = 'arraybuffer';
-    socket.onopen = () => {
-      reconnectDelay = 250;
-      status.textContent = 'Connected';
-      send('hello', {});
-      sendInput();
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+    if (socket && socket.readyState !== WebSocket.CLOSED) return;
+    if (!credential) {
+      pairing.hidden = false;
+      status.textContent = 'Enter pairing code';
+      return;
+    }
+    const url = `ws://${location.host}/bridge`;
+    status.textContent = 'Connecting paired session…';
+    authenticated = false;
+    const source = new WebSocket(url);
+    socket = source;
+    source.binaryType = 'arraybuffer';
+    source.onopen = () => {
+      if (source !== socket) return;
+      status.textContent = 'Authenticating…';
+      source.send(JSON.stringify({v: 2, type: 'auth', credential}));
     };
-    socket.onmessage = event => {
-      if (typeof event.data !== 'string') { displayFrame(event.data); return; }
+    source.onmessage = event => {
+      if (source !== socket) return;
+      if (typeof event.data !== 'string') {
+        if (authenticated) displayFrame(event.data, source);
+        return;
+      }
       try {
         const message = JSON.parse(event.data);
+        if (message.v !== 2) return;
+        if (message.type === 'hello') {
+          authenticated = true;
+          inputSequence = 0;
+          reconnectDelay = 250;
+          pairing.hidden = true;
+          status.textContent = 'Connected';
+          sendInput();
+        }
         if ((message.type === 'hello' || message.type === 'layout') && message.layout)
           applyLayout(message.layout);
         if (message.type === 'ping') send('pong', {sent: message.sent});
       } catch (_) {}
     };
-    socket.onclose = event => {
+    source.onclose = event => {
+      if (source !== socket) return;
       releaseAll();
-      status.textContent = event.code === 1008 ? 'Another phone is connected' : 'Disconnected; retrying…';
-      if (event.code !== 1008) {
-        setTimeout(connect, reconnectDelay);
+      authenticated = false;
+      socket = null;
+      pendingFrame = null;
+      if (event.reason === 'Authentication failed' || event.reason === 'Pairing changed') {
+        credential = '';
+        rememberCredential('');
+        pairing.hidden = false;
+        status.textContent = event.reason === 'Pairing changed' ? 'Pairing code changed' : 'Pairing failed';
+        pairingCode.focus();
+      } else {
+        status.textContent = 'Disconnected; retrying…';
+        reconnectTimer = setTimeout(connect, reconnectDelay);
         reconnectDelay = Math.min(5000, reconnectDelay * 2);
       }
     };
-    socket.onerror = () => { status.textContent = 'Connection error'; };
+    source.onerror = () => { if (source === socket) status.textContent = 'Connection error'; };
   }
 
   document.addEventListener('visibilitychange', () => {
@@ -266,7 +365,8 @@
   });
   window.addEventListener('blur', releaseAll);
   window.addEventListener('contextmenu', event => event.preventDefault());
-  setInterval(sendInput, 200);
+  window.addEventListener('pagehide', releaseAll);
+  setInterval(sendInputNow, 200);
   const fullscreenButton = document.getElementById('fullscreen');
   fullscreenButton.addEventListener('click', () => {
     if (document.fullscreenElement) document.exitFullscreen();
@@ -276,6 +376,24 @@
     const label = document.fullscreenElement ? 'Exit full screen' : 'Enter full screen';
     fullscreenButton.setAttribute('aria-label', label);
     fullscreenButton.title = label;
+  });
+  const fragment = new URLSearchParams(location.hash.slice(1)).get('pair') || '';
+  if (/^[A-Za-z0-9_-]{43}$/.test(fragment)) {
+    credential = fragment;
+    history.replaceState(null, '', `${location.pathname}${location.search}`);
+    rememberCredential(credential);
+  } else {
+    try { credential = sessionStorage.getItem('widemelonPairing') || ''; } catch (_) {}
+  }
+  pairingForm.addEventListener('submit', event => {
+    event.preventDefault();
+    const code = pairingCode.value.replace(/\D/g, '');
+    if (!/^\d{10}$/.test(code)) return;
+    credential = code;
+    rememberCredential(credential);
+    pairingCode.value = '';
+    pairing.hidden = true;
+    connect();
   });
   connect();
 })();
