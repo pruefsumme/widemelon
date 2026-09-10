@@ -19,6 +19,7 @@ components are installed beside this notice and remain in the source tree.
 | gif-h | Public domain | `src/frontend/qt_sdl/gif-h/gif.h` |
 | SHA-1 implementation | Public domain | `src/sha1/sha1.c` |
 | glad generated loaders | Public domain/WTFPL/CC0; Khronos portions Apache-2.0 | `src/frontend/glad/` source headers |
+| QR Code generator library, commit `3c6d0b3cefb4e049dc337e82237c9644399716a8` | MIT | `licenses/QRCodeGenerator-LICENSE` |
 | ENet | MIT | included in each release source archive |
 | FAAD2 | GPL-2.0-or-later | included in each release source archive |
 

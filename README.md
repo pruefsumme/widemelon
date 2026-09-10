@@ -49,8 +49,8 @@ The bridge is off by default and never starts without an explicit action.
    **Config > Phone screen & controller…**.
 2. Select the private IPv4 address shared with your phone and choose
    **Enable for this session** or **Start server**.
-3. Open the displayed `http://` address in current Android Chrome or iOS
-   Safari. The first phone to connect controls the session.
+3. Scan the displayed QR code with current Android Chrome or iOS Safari, or
+   open the displayed `http://` address and enter its 10-digit pairing code.
 
 While the phone is connected, the desktop uses the wide top screen by itself.
 While waiting, after a disconnect, or after any network/capture failure, the
@@ -68,14 +68,19 @@ directional control can use a D-pad or analog-stick appearance, and the status,
 FPS, and frame text can be hidden. Applying a layout updates a connected phone
 immediately and saves it for later sessions.
 
-The initial bridge sends the native `256 × 192` bottom screen as JPEG at up to
-30 FPS. It uses the displayed web port and the following port, so both must be
-allowed by the host firewall. It does not stream audio.
+The bridge sends the native `256 × 192` bottom screen as JPEG at up to 30 FPS.
+The webpage and controls share the single displayed TCP port, which must be
+allowed by the host firewall. WideMelon detects common firewalls conservatively
+and gives graphical guidance, but never changes firewall settings. It does not
+stream audio.
 
-> **Network warning:** the initial bridge has no authentication or encryption.
-> While it is running, the first device on the selected network can control the
-> emulator. Use it only on a network you trust, never expose its ports to the
-> internet, and stop it when finished.
+> **Network warning:** use only on a private home network you trust. Pairing
+> prevents other devices from connecting, but the connection is not encrypted.
+
+WideMelon creates a new QR secret and independent 10-digit code every time the
+bridge starts. Credentials are held only for that session and also change when
+you revoke pairing or generate a new code. Repeated failures are temporarily
+rate-limited; they never rotate a valid code.
 
 If no private network address is available, join the same Wi-Fi network on both
 devices or create a hotspot with your operating system. WideMelon does not
@@ -136,6 +141,18 @@ from the OpenGL output, downsamples it to native resolution, and uses a bounded
 asynchronous readback/encoder pipeline. Acknowledgements make old frames drop
 instead of accumulating latency. A one-second heartbeat releases every remote
 button and touch and restores the desktop fallback after a failed connection.
+Before that pipeline is enabled for a phone, the browser must authenticate with
+the session-only QR secret or manual code and originate from the selected local
+subnet. Unauthenticated clients receive neither layout nor screen frames and
+cannot submit controls.
+
+This is an authorization boundary for ordinary devices on a trusted home LAN,
+not encrypted hostile-network transport. A device able to sniff or actively
+modify local traffic, or compromised network infrastructure, can still observe
+or interfere with the session. Do not expose the port to the internet or use it
+on public, guest, school, workplace, or otherwise untrusted networks. VPN and
+firewall status are advisory diagnostics rather than proof of reachability or
+trust.
 
 The phone configurator includes a generated test pattern, live bridge logs,
 frame/encode/drop/RTT metrics, optional rotating file logs, synchronous GPU

@@ -9,6 +9,16 @@
   <link rel="stylesheet" href="app.css">
 </head>
 <body>
+  <section id="pairing" aria-live="polite">
+    <h1>Pair with WideMelon</h1>
+    <p>Scan the QR code shown on the computer, or enter its 10-digit code.</p>
+    <form id="pairing-form">
+      <label for="pairing-code">Pairing code</label>
+      <input id="pairing-code" inputmode="numeric" autocomplete="one-time-code" maxlength="10" pattern="[0-9]{10}" required>
+      <button type="submit">Connect</button>
+    </form>
+    <p class="security-note">Use only on a private home network you trust. This connection is not encrypted.</p>
+  </section>
   <div id="hud">
     <span id="status" role="status" aria-live="polite">Connecting…</span>
     <span id="metrics">Waiting for video</span>

@@ -66,8 +66,14 @@ set(SOURCES_QT_SDL
     PhoneLayoutDialog.h
     PhoneLayoutDialog.cpp
     PhoneProtocol.h
+    PhoneSecurity.h
+    PhoneSecurity.cpp
+    PhoneFirewall.h
+    PhoneFirewall.cpp
     PhoneScreenDialog.h
     PhoneScreenDialog.cpp
+    qrcodegen/qrcodegen.hpp
+    qrcodegen/qrcodegen.cpp
     phone/phone.qrc
 
     LANDialog.cpp
@@ -77,11 +83,11 @@ set(SOURCES_QT_SDL
 option(USE_QT6 "Use Qt 6 instead of Qt 5" ON)
 
 if (USE_QT6)
-    find_package(Qt6 COMPONENTS Core Gui Widgets Network WebSockets Multimedia OpenGL OpenGLWidgets Svg REQUIRED)
-    set(QT_LINK_LIBS Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network Qt6::WebSockets Qt6::Multimedia Qt6::OpenGL Qt6::OpenGLWidgets)
+    find_package(Qt6 COMPONENTS Core Concurrent Gui Widgets Network WebSockets Multimedia OpenGL OpenGLWidgets Svg REQUIRED)
+    set(QT_LINK_LIBS Qt6::Core Qt6::Concurrent Qt6::Gui Qt6::Widgets Qt6::Network Qt6::WebSockets Qt6::Multimedia Qt6::OpenGL Qt6::OpenGLWidgets)
 else()
-    find_package(Qt5 COMPONENTS Core Gui Widgets Network WebSockets Multimedia Svg REQUIRED)
-    set(QT_LINK_LIBS Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Network Qt5::WebSockets Qt5::Multimedia)
+    find_package(Qt5 COMPONENTS Core Concurrent Gui Widgets Network WebSockets Multimedia Svg REQUIRED)
+    set(QT_LINK_LIBS Qt5::Core Qt5::Concurrent Qt5::Gui Qt5::Widgets Qt5::Network Qt5::WebSockets Qt5::Multimedia)
 endif()
 
 set(CMAKE_AUTOMOC ON)
@@ -302,6 +308,7 @@ if (UNIX AND NOT APPLE)
         DESTINATION ${WIDEMELON_DOC_DIR}/licenses RENAME input-diagrams-gpl3.md)
     install(FILES ${CMAKE_SOURCE_DIR}/licenses/FAAD2-COPYING
         ${CMAKE_SOURCE_DIR}/licenses/ENet-LICENSE
+        ${CMAKE_SOURCE_DIR}/licenses/QRCodeGenerator-LICENSE
         DESTINATION ${WIDEMELON_DOC_DIR}/licenses)
     install(TARGETS melonDS BUNDLE DESTINATION ${CMAKE_BINARY_DIR} RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
 

@@ -9,6 +9,9 @@
   const canvas = document.getElementById('screen');
   const context = canvas.getContext('2d', {alpha: false});
   const dpad = document.getElementById('dpad');
+  const pairing = document.getElementById('pairing');
+  const pairingForm = document.getElementById('pairing-form');
+  const pairingCode = document.getElementById('pairing-code');
   const pointers = new Map();
   let socket = null;
   let buttons = 0;
@@ -19,10 +22,12 @@
   let lastFpsAt = performance.now();
   let displayedFps = 0;
   let inputSequence = 0;
+  let credential = '';
+  let authenticated = false;
 
   function send(type, extra = {}) {
-    if (socket && socket.readyState === WebSocket.OPEN)
-      socket.send(JSON.stringify({v: 1, type, ...extra}));
+    if (authenticated && socket && socket.readyState === WebSocket.OPEN)
+      socket.send(JSON.stringify({v: 2, type, ...extra}));
   }
 
   function sendInput() { send('input', {seq: ++inputSequence, buttons, hotkeys, touch}); }
@@ -105,11 +110,6 @@
       }
     }
   }
-
-  fetch('layout.json', {cache: 'no-store'})
-    .then(response => response.ok ? response.json() : Promise.reject())
-    .then(applyLayout)
-    .catch(() => {});
 
   function dpadBits(event) {
     const rect = dpad.getBoundingClientRect();
@@ -207,7 +207,7 @@
   async function displayFrame(buffer) {
     if (buffer.byteLength < 24) return;
     const view = new DataView(buffer);
-    if (view.getUint32(0, false) !== 0x574d4631 || view.getUint8(20) !== 1) return;
+    if (view.getUint32(0, false) !== 0x574d4632 || view.getUint8(20) !== 1) return;
     const sequence = view.getUint32(4, true);
     try {
       const bitmap = await createImageBitmap(new Blob([buffer.slice(24)], {type: 'image/jpeg'}));
@@ -230,20 +230,32 @@
   }
 
   function connect() {
-    const url = `ws://${location.hostname}:${Number(location.port || 80) + 1}/`;
-    status.textContent = 'Connecting…';
+    if (!credential) {
+      pairing.hidden = false;
+      status.textContent = 'Enter pairing code';
+      return;
+    }
+    const url = `ws://${location.host}/bridge`;
+    status.textContent = 'Connecting paired session…';
+    authenticated = false;
     socket = new WebSocket(url);
     socket.binaryType = 'arraybuffer';
     socket.onopen = () => {
       reconnectDelay = 250;
-      status.textContent = 'Connected';
-      send('hello', {});
-      sendInput();
+      status.textContent = 'Authenticating…';
+      socket.send(JSON.stringify({v: 2, type: 'auth', credential}));
     };
     socket.onmessage = event => {
       if (typeof event.data !== 'string') { displayFrame(event.data); return; }
       try {
         const message = JSON.parse(event.data);
+        if (message.v !== 2) return;
+        if (message.type === 'hello') {
+          authenticated = true;
+          pairing.hidden = true;
+          status.textContent = 'Connected';
+          sendInput();
+        }
         if ((message.type === 'hello' || message.type === 'layout') && message.layout)
           applyLayout(message.layout);
         if (message.type === 'ping') send('pong', {sent: message.sent});
@@ -251,8 +263,15 @@
     };
     socket.onclose = event => {
       releaseAll();
-      status.textContent = event.code === 1008 ? 'Another phone is connected' : 'Disconnected; retrying…';
-      if (event.code !== 1008) {
+      authenticated = false;
+      if (event.reason === 'Authentication failed' || event.reason === 'Pairing changed') {
+        credential = '';
+        sessionStorage.removeItem('widemelonPairing');
+        pairing.hidden = false;
+        status.textContent = event.reason === 'Pairing changed' ? 'Pairing code changed' : 'Pairing failed';
+        pairingCode.focus();
+      } else {
+        status.textContent = 'Disconnected; retrying…';
         setTimeout(connect, reconnectDelay);
         reconnectDelay = Math.min(5000, reconnectDelay * 2);
       }
@@ -276,6 +295,24 @@
     const label = document.fullscreenElement ? 'Exit full screen' : 'Enter full screen';
     fullscreenButton.setAttribute('aria-label', label);
     fullscreenButton.title = label;
+  });
+  const fragment = new URLSearchParams(location.hash.slice(1)).get('pair') || '';
+  if (/^[A-Za-z0-9_-]{43}$/.test(fragment)) {
+    credential = fragment;
+    sessionStorage.setItem('widemelonPairing', credential);
+    history.replaceState(null, '', `${location.pathname}${location.search}`);
+  } else {
+    credential = sessionStorage.getItem('widemelonPairing') || '';
+  }
+  pairingForm.addEventListener('submit', event => {
+    event.preventDefault();
+    const code = pairingCode.value.replace(/\D/g, '');
+    if (!/^\d{10}$/.test(code)) return;
+    credential = code;
+    sessionStorage.setItem('widemelonPairing', credential);
+    pairingCode.value = '';
+    pairing.hidden = true;
+    connect();
   });
   connect();
 })();

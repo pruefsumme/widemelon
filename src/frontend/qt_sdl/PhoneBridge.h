@@ -7,19 +7,25 @@
 #include <memory>
 
 #include <QElapsedTimer>
+#include <QHash>
 #include <QImage>
 #include <QList>
 #include <QMutex>
 #include <QObject>
+#include <QSet>
 #include <QString>
 #include <QStringList>
+#include <QWebSocketProtocol>
 
 #include "types.h"
+#include "PhoneSecurity.h"
 
 class QTcpServer;
+class QTcpSocket;
 class QTimer;
 class QWebSocket;
 class QWebSocketServer;
+class QHostAddress;
 
 struct PhoneBridgeSettings
 {
@@ -42,6 +48,7 @@ struct PhoneBridgeMetrics
     quint64 framesDropped = 0;
     quint64 bytesSent = 0;
     quint64 protocolErrors = 0;
+    quint64 authenticationFailures = 0;
     double lastEncodeMs = 0.0;
     double averageEncodeMs = 0.0;
     double roundTripMs = 0.0;
@@ -78,7 +85,11 @@ public:
     void reportCaptureDrop(const QString& reason);
     QString statusText() const;
     QString url() const;
+    QString pairingUrl() const;
+    QString pairingCode() const;
+    QString connectedClientLabel() const;
     QString lastError() const;
+    void regeneratePairing();
 
     melonDS::u32 remoteKeyMask() const;
     melonDS::u32 remoteHotkeyMask() const;
@@ -98,9 +109,10 @@ signals:
     void statusChanged();
     void connectionChanged(bool connected);
     void logAdded(const QString& line);
+    void pairingChanged();
 
 private slots:
-    void acceptHttpConnections();
+    void acceptTcpConnections();
     void acceptWebSocket();
     void checkHeartbeat();
     void emitTestPattern();
@@ -112,7 +124,17 @@ private:
     void log(LogLevel level, const QString& category, const QString& message) const;
     void resetRemoteInput();
     void setConnected(bool value);
-    void handleHttpSocket(class QTcpSocket* socket);
+    void handleTcpSocket(class QTcpSocket* socket);
+    void routeTcpSocket(class QTcpSocket* socket);
+    void serveHttpSocket(class QTcpSocket* socket, const QByteArray& data, int headerEnd);
+    void handlePendingMessage(QWebSocket* socket, const QString& message);
+    void authenticateClient(QWebSocket* socket);
+    void closePendingClient(QWebSocket* socket, QWebSocketProtocol::CloseCode code, const QString& reason);
+    bool peerAllowed(const QHostAddress& peer) const;
+    bool authenticationTemporarilyBlocked(const QHostAddress& peer, qint64 now);
+    void recordAuthenticationFailure(const QHostAddress& peer, qint64 now);
+    void generatePairingCredentials();
+    void clearPairingCredentials();
     void handleTextMessage(const QString& message);
     void encodedFrameReady(quint32 generation, quint32 sequence, const QByteArray& jpeg, double encodeMs);
     void sendPendingFrame();
@@ -129,6 +151,8 @@ private:
     QTcpServer* httpServer = nullptr;
     QWebSocketServer* webSocketServer = nullptr;
     QWebSocket* client = nullptr;
+    QSet<QTcpSocket*> pendingTcpSockets;
+    QSet<QWebSocket*> pendingClients;
     QTimer* heartbeatTimer = nullptr;
     QTimer* testPatternTimer = nullptr;
     QElapsedTimer heartbeatClock;
@@ -137,6 +161,9 @@ private:
     qint64 controlRateWindowMs = 0;
     int controlMessagesInWindow = 0;
     quint32 lastInputSequence = 0;
+    PhonePairingCredentials pairingCredentials;
+    QString clientAddressLabel;
+    PhoneAuthenticationLimiter authenticationLimiter;
 
     std::unique_ptr<EncoderThread> encoder;
     std::atomic<bool> connected {false};

@@ -19,6 +19,8 @@ Pinned source dependencies:
   shared libraries; their package copyright files are embedded in the AppImage
   and their matching distribution sources are published in the release's
   third-party source archive.
+- QR Code generator library: https://github.com/nayuki/QR-Code-generator
+  commit `3c6d0b3cefb4e049dc337e82237c9644399716a8` (MIT).
 
 The input configuration uses original WideMelon schematic controller diagrams
 under GPL-3.0-or-later. They replace melonDS's former Dimensions.com-derived

@@ -8,6 +8,36 @@
   color: #d9d9d9;
 }
 
+#pairing {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: 0.8rem;
+  padding: 2rem;
+  color: #f4f7fb;
+  background: #0f141e;
+  text-align: center;
+}
+#pairing[hidden] { display: none; }
+#pairing h1, #pairing p { margin: 0; }
+#pairing-form { display: grid; gap: 0.6rem; width: min(22rem, 85vw); margin: 0 auto; }
+#pairing-code {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0.75rem;
+  border: 2px solid #61728d;
+  border-radius: 0.6rem;
+  background: #171f2c;
+  color: white;
+  font: 700 1.4rem ui-monospace, monospace;
+  letter-spacing: 0.18em;
+  text-align: center;
+}
+#pairing-form button { padding: 0.75rem; font-weight: 700; }
+#pairing .security-note { color: #f2c879; font-size: 0.85rem; }
+
 * {
   box-sizing: border-box;
   -webkit-user-select: none;

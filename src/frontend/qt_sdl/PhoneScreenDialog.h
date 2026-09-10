@@ -29,11 +29,13 @@ private slots:
     void startOrArm();
     void stopOrDisarm();
     void exportDiagnostics();
+    void regeneratePairing();
 
 private:
     void loadControls();
     void applyControls();
     bool confirmUnsafeStart();
+    void checkFirewall();
 
     PhoneBridgeManager* manager;
     bool startup;
@@ -47,12 +49,16 @@ private:
     QCheckBox* testPattern;
     QLabel* status;
     QLabel* address;
+    QLabel* pairingQr;
+    QLabel* pairingCode;
+    QLabel* connectedClient;
     QLabel* metrics;
     QLabel* warning;
     QPlainTextEdit* logs;
     QPushButton* startButton;
     QPushButton* stopButton;
     QTimer* refreshTimer;
+    bool firewallChecked = false;
 };
 
 namespace WideMelon

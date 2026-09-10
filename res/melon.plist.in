@@ -28,6 +28,8 @@
     <string>We need microphone access so you can use the emulated DS microphone</string>
     <key>NSCameraUsageDescription</key>
     <string>Camera access is needed for emulation of the DSi's cameras</string>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>WideMelon uses your private home network to send the bottom screen to your paired phone and receive controls.</string>
     <key>CFBundleDocumentTypes</key>
     <array>
         <dict>

@@ -152,6 +152,8 @@ EmuInstance::EmuInstance(int inst) : deleting(false),
         if (!phoneBridge->start())
             QMessageBox::warning(mainWindow, "Phone bridge unavailable",
                 phoneBridge->lastError() + "\n\nWideMelon will keep showing the desktop bottom screen.");
+        else
+            WideMelon::OpenPhoneScreenSettings(phoneBridge.get(), mainWindow);
         WideMelon::ClearPhoneBridgeSessionRequest();
     }
 
