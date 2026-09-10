@@ -41,6 +41,11 @@ if(BUILD_TESTING)
     add_test(NAME phone_bridge COMMAND phone_bridge_test)
     set_tests_properties(phone_bridge PROPERTIES TIMEOUT 20 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
+    add_executable(phone_firewall_test phone_firewall_test.cpp ../src/frontend/qt_sdl/PhoneFirewall.cpp)
+    target_include_directories(phone_firewall_test PRIVATE ../src)
+    target_link_libraries(phone_firewall_test PRIVATE Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Network)
+    add_test(NAME phone_firewall COMMAND phone_firewall_test)
+
     find_program(NODE_EXECUTABLE node)
     if(NODE_EXECUTABLE)
         add_test(NAME phone_browser COMMAND ${NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/phone_browser_test.js)

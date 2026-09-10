@@ -34,7 +34,9 @@ ProcessResult run(const QString& program, const QStringList& arguments)
     process.setProcessChannelMode(QProcess::MergedChannels);
     process.setProgram(program);
     process.setArguments(arguments);
-    process.setProcessEnvironment(QProcessEnvironment());
+    QProcessEnvironment environment;
+    environment.insert("LC_ALL", "C");
+    process.setProcessEnvironment(environment);
     process.start();
     ProcessResult result;
     result.started = process.waitForStarted(1000);
@@ -43,6 +45,11 @@ ProcessResult run(const QString& program, const QStringList& arguments)
     {
         result.exitCode = process.exitCode();
         result.output = process.readAll().trimmed();
+    }
+    else if (result.started)
+    {
+        process.kill();
+        process.waitForFinished(1000);
     }
     return result;
 }
@@ -76,9 +83,10 @@ PhoneFirewallResult InspectPhoneFirewall(const QString& address, quint16 port)
             if (query.exitCode == 0 && query.output == "yes") result.status = PhoneFirewallStatus::Allowed;
             else if (query.exitCode == 1 && query.output == "no")
             {
-                result.status = PhoneFirewallStatus::Blocked;
-                result.guidance = "firewalld appears to block WideMelon's phone port on the selected network. "
-                    "Open your system firewall settings and allow WideMelon TCP traffic on this private home network, then retry.";
+                // A port query does not include services, rich rules, policies,
+                // or the zone target. Absence of a port rule is not a block.
+                result.guidance = "firewalld has no explicit rule for WideMelon's TCP port in the selected zone. "
+                    "If the phone cannot connect, check the zone's services and rules in your system firewall settings.";
             }
             return result;
         }
@@ -92,15 +100,10 @@ PhoneFirewallResult InspectPhoneFirewall(const QString& address, quint16 port)
         {
             result.detected = true;
             result.name = "UFW";
-            const QByteArray needle = QByteArray::number(port) + "/tcp";
-            if (status.output.contains(needle) && status.output.contains("ALLOW"))
-                result.status = PhoneFirewallStatus::Allowed;
-            else
-            {
-                result.status = PhoneFirewallStatus::Blocked;
-                result.guidance = "UFW appears to block WideMelon's phone port. Open your system firewall settings "
-                    "and allow WideMelon TCP traffic on this private home network, then retry.";
-            }
+            // The human-readable rule list cannot prove reachability: ALLOW
+            // may refer to a different port, source, address family or interface.
+            result.guidance = "UFW is active. If the phone cannot connect, check that its address is allowed "
+                "to reach WideMelon's TCP port on the selected private home network.";
         }
     }
 #else

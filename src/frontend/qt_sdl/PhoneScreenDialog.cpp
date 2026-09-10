@@ -338,7 +338,7 @@ void PhoneScreenDialog::checkFirewall()
         const auto current = manager->settings();
         if (current.address != settings.address || current.basePort != settings.basePort) return;
         firewallResult = firewall;
-        if (firewall.detected && firewall.status == PhoneFirewallStatus::Blocked)
+        if (firewall.detected && firewall.status != PhoneFirewallStatus::Allowed && !firewall.guidance.isEmpty())
             QMessageBox::information(this, "Firewall may block phone connection",
                 firewall.guidance + "\n\nFirewall detection is advisory and cannot prove whether the phone can reach this computer.");
     });
