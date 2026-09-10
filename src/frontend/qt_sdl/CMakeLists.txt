@@ -57,6 +57,8 @@ set(SOURCES_QT_SDL
 
     CLI.h
     CLI.cpp
+    WideMelonSetup.h
+    WideMelonSetup.cpp
 
     LANDialog.cpp
     NetplayDialog.cpp
@@ -93,6 +95,7 @@ fix_interface_includes(PkgConfig::SDL2 PkgConfig::LibArchive)
 add_compile_definitions(ARCHIVE_SUPPORT_ENABLED)
 
 add_executable(melonDS ${SOURCES_QT_SDL})
+set_target_properties(melonDS PROPERTIES OUTPUT_NAME widemelon)
 
 add_subdirectory("../../net"
     ${CMAKE_BINARY_DIR}/net)
@@ -237,7 +240,7 @@ if (APPLE)
     set_target_properties(melonDS PROPERTIES
         MACOSX_BUNDLE true
         MACOSX_BUNDLE_INFO_PLIST ${CMAKE_SOURCE_DIR}/res/melon.plist.in
-        OUTPUT_NAME melonDS
+        OUTPUT_NAME WideMelon
         RESOURCE "${RESOURCE_FILES}")
 
 
@@ -258,10 +261,11 @@ if (UNIX AND NOT APPLE)
     foreach(SIZE 16 32 48 64 128 256)
         install(FILES ${CMAKE_SOURCE_DIR}/res/icon/melon_${SIZE}x${SIZE}.png
             DESTINATION ${CMAKE_INSTALL_PREFIX}/share/icons/hicolor/${SIZE}x${SIZE}/apps
-            RENAME net.kuribo64.melonDS.png)
+            RENAME io.github.pruefsumme.WideMelon.png)
     endforeach()
 
-    install(FILES ${CMAKE_SOURCE_DIR}/res/net.kuribo64.melonDS.desktop DESTINATION ${CMAKE_INSTALL_PREFIX}/share/applications)
+    install(FILES io.github.pruefsumme.WideMelon.desktop DESTINATION ${CMAKE_INSTALL_PREFIX}/share/applications)
+    install(FILES io.github.pruefsumme.WideMelon.metainfo.xml DESTINATION ${CMAKE_INSTALL_PREFIX}/share/metainfo)
     install(TARGETS melonDS BUNDLE DESTINATION ${CMAKE_BINARY_DIR} RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
 
     if (NOT USE_QT6)

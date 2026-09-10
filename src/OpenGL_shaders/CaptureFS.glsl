@@ -39,7 +39,8 @@ void main()
     {
         int line = int(fTexcoord.z);
         coordA.x += uSrcAOffset[line>>2][line&0x3];
-        //coordA.x += GetSrcAPos(fTexcoord.z);
+        vec2 size = vec2(textureSize(InputTexA, 0));
+        coordA.x = (coordA.x - 0.5) * (size.y * (256.0 / 192.0)) / size.x + 0.5;
     }
 
     if (uDstMode == 0)

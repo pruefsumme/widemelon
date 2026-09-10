@@ -68,6 +68,11 @@ ivec3 ConvertColor(int col)
 
 vec4 BG0Fetch(vec2 coord)
 {
+    if (uEnable3D) {
+        vec2 size = vec2(textureSize(BGLayerTex[0], 0));
+        float nativeWidth = size.y * (256.0 / 192.0);
+        coord.x = (coord.x - 0.5) * nativeWidth / size.x + 0.5;
+    }
     return texture(BGLayerTex[0], coord);
 }
 

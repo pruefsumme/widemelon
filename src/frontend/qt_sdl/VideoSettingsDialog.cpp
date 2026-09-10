@@ -20,6 +20,7 @@
 #include <QtGlobal>
 
 #include "types.h"
+#include "WideMelon.h"
 #include "Platform.h"
 #include "Config.h"
 #include "GPU.h"
@@ -77,6 +78,13 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
     connect(grp3DRenderer, SIGNAL(idClicked(int)), this, SLOT(onChange3DRenderer(int)));
 #endif
     grp3DRenderer->button(oldRenderer)->setChecked(true);
+
+    if (WideMelon::Enabled())
+    {
+        ui->rb3DSoftware->setEnabled(false);
+        ui->rb3DCompute->setEnabled(false);
+        ui->rb3DOpenGL->setToolTip("The expanded WideMelon viewport requires the classic OpenGL renderer.");
+    }
 
 #ifndef OGLRENDERER_ENABLED
     ui->rb3DOpenGL->setEnabled(false);

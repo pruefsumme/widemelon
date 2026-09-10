@@ -16,6 +16,7 @@
     with melonDS. If not, see http://www.gnu.org/licenses/.
 */
 
+#include "WideMelon.h"
 #include "GPU_OpenGL.h"
 
 #include <assert.h>
@@ -343,7 +344,7 @@ void GLRenderer3D::SetRenderSettings(int scale, bool betterpolygons) noexcept
     ScaleFactor = scale;
     BetterPolygons = betterpolygons;
 
-    ScreenW = 256 * scale;
+    ScreenW = WideMelon::Width() * scale;
     ScreenH = 192 * scale;
 
     glBindTexture(GL_TEXTURE_2D, ColorBufferTex);
@@ -463,6 +464,9 @@ u32* GLRenderer3D::SetupVertex(const Polygon* poly, int vid, const Vertex* vtx, 
                 x = vtop->FinalPosition[0];
         }
     }*/
+
+    if (WideMelon::Enabled())
+        x = (static_cast<uint64_t>(vtx->HiresPosition[0]) * ScaleFactor * WideMelon::Width()) / (16 * 256);
 
     *vptr++ = x | (y << 16);
     *vptr++ = z | (w << 16);
@@ -701,7 +705,7 @@ void GLRenderer3D::BuildPolygons(GLRenderer3D::RendererPolygon* polygons, int np
                 cS *= cW;
                 cT *= cW;
 
-                cX = (cX * ScaleFactor) >> 4;
+                cX = (static_cast<uint64_t>(cX) * ScaleFactor * WideMelon::Width()) / (16 * 256);
                 cY = (cY * ScaleFactor) >> 4;
 
                 u32 w = (u32)cW;

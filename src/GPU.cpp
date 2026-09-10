@@ -16,6 +16,7 @@
     with melonDS. If not, see http://www.gnu.org/licenses/.
 */
 
+#include "WideMelon.h"
 #include <string.h>
 #include "NDS.h"
 #include "GPU.h"
@@ -327,6 +328,11 @@ void GPU::SetRenderer(std::unique_ptr<Renderer>&& renderer) noexcept
         }
         else
         {
+            if (WideMelon::Enabled()) {
+                Platform::Log(Platform::LogLevel::Error,
+                    "WideMelon: OpenGL renderer initialization failed.\n");
+                std::exit(1);
+            }
             // TODO: report error to platform
         }
     }

@@ -55,7 +55,13 @@ out vec4 oColor;
 
 void main()
 {
-    vec4 pixel = texture(ScreenTex, fTexcoord);
+    vec3 coord = fTexcoord;
+    // The physical touchscreen stays 4:3 and samples the center of its texture.
+    if (coord.z > 0.5) {
+        vec3 size = vec3(textureSize(ScreenTex, 0));
+        coord.x = (coord.x - 0.5) * (size.y * (256.0 / 192.0)) / size.x + 0.5;
+    }
+    vec4 pixel = texture(ScreenTex, coord);
 
     oColor = vec4(pixel.rgb, 1.0);
 }

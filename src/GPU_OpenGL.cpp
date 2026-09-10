@@ -16,6 +16,7 @@
     with melonDS. If not, see http://www.gnu.org/licenses/.
 */
 
+#include "WideMelon.h"
 #include <string.h>
 #include "NDS.h"
 #include "GPU_OpenGL.h"
@@ -348,7 +349,7 @@ void GLRenderer::SetScaleFactor(int scale)
         return;
 
     ScaleFactor = scale;
-    ScreenW = 256 * scale;
+    ScreenW = WideMelon::Width() * scale;
     ScreenH = 192 * scale;
 
     const GLenum fbassign2[] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
@@ -556,6 +557,18 @@ void GLRenderer::RenderScreen(int ystart, int yend)
     else
     {
         glUseProgram(FPShader);
+
+        glUniform1f(glGetUniformLocation(FPShader, "uWideRatio"), WideMelon::Width() / 256.0f);
+        glUniform1i(glGetUniformLocation(FPShader, "uWideScene"),
+                    WideMelon::Enabled() && ((DispCntA & 0x10108) == 0x10108)
+                    && GPU.GPU2D_A.Enabled && !GPU.GPU2D_A.ForcedBlank);
+        glUniform2i(glGetUniformLocation(FPShader, "uWideBrightness"),
+                    (GPU.GPU2D_A.BlendCnt & 1) ? ((GPU.GPU2D_A.BlendCnt >> 6) & 3) : 0,
+                    std::min<int>(GPU.GPU2D_A.EVY, 16));
+        glUniform1i(glGetUniformLocation(FPShader, "WideInputTex"), 3);
+        glActiveTexture(GL_TEXTURE3);
+        glBindTexture(GL_TEXTURE_2D, OutputTex3D);
+        glActiveTexture(GL_TEXTURE0);
 
         FinalPassConfig.uScaleFactor = ScaleFactor;
         FinalPassConfig.uDispModeA = (DispCntA >> 16) & 0x3;

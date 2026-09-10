@@ -1,5 +1,9 @@
 #version 140
 
+uniform sampler2D WideInputTex;
+uniform bool uWideScene;
+uniform float uWideRatio;
+uniform ivec2 uWideBrightness;
 uniform sampler2D MainInputTexA;
 uniform sampler2D MainInputTexB;
 uniform sampler2DArray AuxInputTex;
@@ -41,8 +45,18 @@ ivec3 MasterBrightness(ivec3 color, int brightmode, int evy)
 
 void main()
 {
-    ivec4 col_main = ivec4(texture(MainInputTexA, fTexcoord.xy, 0) * 255.0) >> 2;
-    ivec4 col_sub = ivec4(texture(MainInputTexB, fTexcoord.xy, 0) * 255.0) >> 2;
+    vec2 nativeCoord = vec2((fTexcoord.x - 0.5) * uWideRatio + 0.5, fTexcoord.y);
+    bool wing = nativeCoord.x < 0.0 || nativeCoord.x >= 1.0;
+    ivec4 col_main = ivec4(texture(MainInputTexA, nativeCoord, 0) * 255.0) >> 2;
+    ivec4 col_sub = ivec4(texture(MainInputTexB, nativeCoord, 0) * 255.0) >> 2;
+    if (wing) {
+        col_main = uWideScene ? ivec4(texture(WideInputTex, fTexcoord.xy) * 255.0) >> 2 : ivec4(0);
+        col_sub = ivec4(0);
+        if (uWideScene && uWideBrightness.x == 2)
+            col_main += (((63 - col_main) * uWideBrightness.y + 8) >> 4);
+        else if (uWideScene && uWideBrightness.x == 3)
+            col_main -= ((col_main * uWideBrightness.y + 7) >> 4);
+    }
 
     ivec3 output_main, output_sub;
 
@@ -59,7 +73,7 @@ void main()
     else
     {
         // VRAM display / mainmem FIFO
-        output_main = ivec3(texture(AuxInputTex, vec3(fTexcoord.xz, uAuxLayer)).rgb * uAuxColorFactor);
+        output_main = ivec3(texture(AuxInputTex, vec3(nativeCoord.x, fTexcoord.z, uAuxLayer)).rgb * uAuxColorFactor);
     }
 
     if (uDispModeB == 0)
@@ -72,6 +86,9 @@ void main()
         // BG/OBJ layers
         output_sub = col_sub.rgb;
     }
+
+    if (wing && !uWideScene) output_main = ivec3(0);
+    if (wing) output_sub = ivec3(0);
 
     if (uDispModeA != 0)
         output_main = MasterBrightness(output_main, uBrightModeA, uBrightFactorA);

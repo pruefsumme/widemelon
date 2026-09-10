@@ -28,6 +28,7 @@
 
 #include <SDL2/SDL.h>
 
+#include "WideMelon.h"
 #include "main.h"
 
 #include "types.h"
@@ -858,6 +859,9 @@ void EmuThread::enableCheats(bool enable)
 void EmuThread::updateRenderer()
 {
     auto nds = emuInstance->nds;
+
+    if (WideMelon::Enabled())
+        videoRenderer = renderer3D_OpenGL;
 
     if (videoRenderer != lastVideoRenderer)
     {

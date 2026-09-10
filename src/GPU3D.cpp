@@ -16,6 +16,7 @@
     with melonDS. If not, see http://www.gnu.org/licenses/.
 */
 
+#include "WideMelon.h"
 #include <stdio.h>
 #include <string.h>
 #include <algorithm>
@@ -1348,6 +1349,8 @@ void GPU3D::SubmitVertex() noexcept
     vertextrans->Position[2] = (vertex[0]*ClipMatrix[2] + vertex[1]*ClipMatrix[6] + vertex[2]*ClipMatrix[10] + vertex[3]*ClipMatrix[14]) >> 12;
     vertextrans->Position[3] = (vertex[0]*ClipMatrix[3] + vertex[1]*ClipMatrix[7] + vertex[2]*ClipMatrix[11] + vertex[3]*ClipMatrix[15]) >> 12;
 
+    vertextrans->Position[0] = WideMelon::ProjectX(vertextrans->Position[0]);
+
     // this probably shouldn't be.
     // the way color is handled during clipping needs investigation. TODO
     vertextrans->Color[0] = (VertexColor[0] << 12) + 0xFFF;
@@ -1570,6 +1573,8 @@ void GPU3D::BoxTest(const u32* params) noexcept
         cube[i].Position[2] = ((s64)x*ClipMatrix[2] + (s64)y*ClipMatrix[6] + (s64)z*ClipMatrix[10] + (s64)0x1000*ClipMatrix[14]) >> 12;
         cube[i].Position[3] = ((s64)x*ClipMatrix[3] + (s64)y*ClipMatrix[7] + (s64)z*ClipMatrix[11] + (s64)0x1000*ClipMatrix[15]) >> 12;
     }
+
+    for (auto& v : cube) v.Position[0] = WideMelon::ProjectX(v.Position[0]);
 
     // front face (-Z)
     face[0] = cube[0]; face[1] = cube[1]; face[2] = cube[2]; face[3] = cube[3];
@@ -2918,4 +2923,3 @@ void GPU3D::Write32(u32 addr, u32 val) noexcept
 }
 
 }
-

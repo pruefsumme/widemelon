@@ -141,6 +141,7 @@ private slots:
     void onEmuSettingsDialogFinished(int res);
     void onOpenInputConfig();
     void onInputConfigFinished(int res);
+    void onOpenWideMelonSettings();
     void onOpenVideoSettings();
     void onOpenCameraSettings();
     void onCameraSettingsFinished(int res);
@@ -266,6 +267,7 @@ public:
     QAction* actPreferences;
 #endif
     QAction* actInputConfig;
+    QAction* actWideMelonSettings;
     QAction* actVideoSettings;
     QAction* actCameraSettings;
     QAction* actAudioSettings;

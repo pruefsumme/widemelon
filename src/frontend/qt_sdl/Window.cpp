@@ -16,6 +16,8 @@
     with melonDS. If not, see http://www.gnu.org/licenses/.
 */
 
+#include "WideMelon.h"
+#include "WideMelonSetup.h"
 #include "NDS.h"
 #include <stdlib.h>
 #include <time.h>
@@ -221,7 +223,7 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
 
     showOSD = windowCfg.GetBool("ShowOSD");
 
-    setWindowTitle("melonDS " MELONDS_VERSION);
+    setWindowTitle("WideMelon");
     setAttribute(Qt::WA_DeleteOnClose);
     setAcceptDrops(true);
     setFocusPolicy(Qt::ClickFocus);
@@ -590,6 +592,9 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
             actInputConfig = menu->addAction("Input and hotkeys");
             connect(actInputConfig, &QAction::triggered, this, &MainWindow::onOpenInputConfig);
 
+            actWideMelonSettings = menu->addAction("WideMelon settings...");
+            connect(actWideMelonSettings, &QAction::triggered, this, &MainWindow::onOpenWideMelonSettings);
+
             actVideoSettings = menu->addAction("Video settings");
             connect(actVideoSettings, &QAction::triggered, this, &MainWindow::onOpenVideoSettings);
 
@@ -661,6 +666,9 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
 
     panel = nullptr;
     createScreenPanel();
+
+    if (qEnvironmentVariableIsSet("WIDEMELON_VIEW_WIDTH"))
+        resize(windowCfg.GetInt("Width"), windowCfg.GetInt("Height"));
 
     if (hasMenu)
     {
@@ -736,6 +744,7 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
         if (emuInstance->instanceID > 0)
         {
             actEmuSettings->setEnabled(false);
+            actWideMelonSettings->setEnabled(false);
             actVideoSettings->setEnabled(false);
             actMPSettings->setEnabled(false);
             actWifiSettings->setEnabled(false);
@@ -1859,6 +1868,11 @@ void MainWindow::onOpenVideoSettings()
     connect(dlg, &VideoSettingsDialog::updateVideoSettings, this, &MainWindow::onUpdateVideoSettings);
 }
 
+void MainWindow::onOpenWideMelonSettings()
+{
+    WideMelon::OpenSettings(this);
+}
+
 void MainWindow::onOpenCameraSettings()
 {
     emuThread->emuPause();
@@ -2150,7 +2164,7 @@ void MainWindow::onTitleUpdate(QString title)
         title = prefix + title;
     }
 
-    setWindowTitle(title);
+    setWindowTitle("WideMelon — " + title);
 }
 
 void MainWindow::toggleFullscreen()

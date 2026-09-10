@@ -16,6 +16,7 @@
     with melonDS. If not, see http://www.gnu.org/licenses/.
 */
 
+#include "WideMelon.h"
 #include <string.h>
 
 #include <optional>
@@ -167,6 +168,12 @@ void ScreenPanel::setupScreenLayout()
 
     if (aspectBot == 0)
         aspectBot = ((float) w / h) / (4.f / 3.f);
+
+    if (WideMelon::Enabled())
+    {
+        aspectTop = WideMelon::Width() / 256.f;
+        aspectBot = 1.f;
+    }
 
     layout.Setup(w, h,
                 static_cast<ScreenLayoutType>(screenLayout),

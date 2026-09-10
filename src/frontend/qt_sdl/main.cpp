@@ -61,6 +61,7 @@
 #include "Net.h"
 
 #include "CLI.h"
+#include "WideMelonSetup.h"
 
 #include "Net_PCap.h"
 #include "Net_Slirp.h"
@@ -205,9 +206,12 @@ void pathInit()
         emuDirectory = appdirpath;
 #else
         QString confdir;
+        // Keep WideMelon's configuration, saves, and other user data separate from
+        // a stock melonDS installation. Both applications may be installed and
+        // used side by side without rewriting each other's settings.
         QDir config(QStandardPaths::writableLocation(QStandardPaths::ConfigLocation));
-        config.mkdir("melonDS");
-        confdir = config.absolutePath() + QDir::separator() + "melonDS";
+        config.mkdir("WideMelon");
+        confdir = config.absolutePath() + QDir::separator() + "WideMelon";
         emuDirectory = confdir;
 #endif
     }
@@ -334,7 +338,7 @@ int main(int argc, char** argv)
     // http://stackoverflow.com/questions/14543333/joystick-wont-work-using-sdl
     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
 
-    SDL_SetHint(SDL_HINT_APP_NAME, "melonDS");
+    SDL_SetHint(SDL_HINT_APP_NAME, "WideMelon");
 
     if (SDL_Init(SDL_INIT_HAPTIC) < 0)
     {
@@ -367,6 +371,13 @@ int main(int argc, char** argv)
         QMessageBox::critical(nullptr,
                               "melonDS",
                               "Unable to write to config.\nPlease check the write permissions of the folder you placed melonDS in.");
+
+    if (!WideMelon::Configure(*options))
+    {
+        delete options;
+        SDL_Quit();
+        return 0;
+    }
 
     camStarted[0] = false;
     camStarted[1] = false;
