@@ -24,13 +24,36 @@
   let inputSequence = 0;
   let credential = '';
   let authenticated = false;
+  let reconnectTimer = null;
+  let inputTimer = null;
+  let pendingFrame = null;
+  let decoding = false;
+
+  function rememberCredential(value) {
+    // Storage can be disabled even when the page and WebSocket are usable.
+    try {
+      if (value) sessionStorage.setItem('widemelonPairing', value);
+      else sessionStorage.removeItem('widemelonPairing');
+    } catch (_) {}
+  }
 
   function send(type, extra = {}) {
     if (authenticated && socket && socket.readyState === WebSocket.OPEN)
       socket.send(JSON.stringify({v: 2, type, ...extra}));
   }
 
-  function sendInput() { send('input', {seq: ++inputSequence, buttons, hotkeys, touch}); }
+  function sendInputNow() {
+    if (authenticated) send('input', {seq: ++inputSequence, buttons, hotkeys, touch});
+  }
+
+  function sendInput() {
+    // Touch and directional pointer events can exceed the server's rate limit
+    // on high-refresh phones. Coalesce snapshots, keeping releases immediate.
+    if (inputTimer === null) inputTimer = setTimeout(() => {
+      inputTimer = null;
+      sendInputNow();
+    }, 16);
+  }
 
   function recalculateButtons() {
     let value = 0;
@@ -73,6 +96,7 @@
 
   function applyLayout(layout) {
     if (!layout || (layout.version !== 1 && layout.version !== 2) || !Array.isArray(layout.items)) return;
+    releaseAll();
     hud.hidden = layout.showHud === false;
     document.querySelectorAll('[data-layout-custom]').forEach(element => element.remove());
     document.querySelectorAll('[data-layout-id]').forEach(element => { element.hidden = true; });
@@ -201,16 +225,37 @@
     hotkeys = 0;
     touch = {active: false, x: 0, y: 0};
     recalculateButtons();
+    clearTimeout(inputTimer);
+    inputTimer = null;
+    dpad.classList.remove('active');
+    dpad.style.setProperty('--stick-x', '0px');
+    dpad.style.setProperty('--stick-y', '0px');
+    sendInputNow();
     send('visibility', {hidden: true});
   }
 
-  async function displayFrame(buffer) {
+  async function displayFrame(buffer, source) {
+    pendingFrame = {buffer, source};
+    if (decoding) return;
+    decoding = true;
+    try {
+      while (pendingFrame) {
+        const next = pendingFrame;
+        pendingFrame = null;
+        await decodeFrame(next.buffer, next.source);
+      }
+    } finally { decoding = false; }
+  }
+
+  async function decodeFrame(buffer, source) {
+    if (source !== socket || !authenticated) return;
     if (buffer.byteLength < 24) return;
     const view = new DataView(buffer);
     if (view.getUint32(0, false) !== 0x574d4632 || view.getUint8(20) !== 1) return;
     const sequence = view.getUint32(4, true);
     try {
-      const bitmap = await createImageBitmap(new Blob([buffer.slice(24)], {type: 'image/jpeg'}));
+      const bitmap = await createImageBitmap(new Blob([new Uint8Array(buffer, 24)], {type: 'image/jpeg'}));
+      if (source !== socket || !authenticated) { bitmap.close(); return; }
       context.imageSmoothingEnabled = false;
       context.drawImage(bitmap, 0, 0, 256, 192);
       bitmap.close();
@@ -224,12 +269,16 @@
       }
       send('frameAck', {seq: sequence});
     } catch (error) {
+      if (source !== socket || !authenticated) return;
       metrics.textContent = `Decode error: ${error.message}`;
       send('frameAck', {seq: sequence});
     }
   }
 
   function connect() {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+    if (socket && socket.readyState !== WebSocket.CLOSED) return;
     if (!credential) {
       pairing.hidden = false;
       status.textContent = 'Enter pairing code';
@@ -238,20 +287,27 @@
     const url = `ws://${location.host}/bridge`;
     status.textContent = 'Connecting paired session…';
     authenticated = false;
-    socket = new WebSocket(url);
-    socket.binaryType = 'arraybuffer';
-    socket.onopen = () => {
-      reconnectDelay = 250;
+    const source = new WebSocket(url);
+    socket = source;
+    source.binaryType = 'arraybuffer';
+    source.onopen = () => {
+      if (source !== socket) return;
       status.textContent = 'Authenticating…';
-      socket.send(JSON.stringify({v: 2, type: 'auth', credential}));
+      source.send(JSON.stringify({v: 2, type: 'auth', credential}));
     };
-    socket.onmessage = event => {
-      if (typeof event.data !== 'string') { displayFrame(event.data); return; }
+    source.onmessage = event => {
+      if (source !== socket) return;
+      if (typeof event.data !== 'string') {
+        if (authenticated) displayFrame(event.data, source);
+        return;
+      }
       try {
         const message = JSON.parse(event.data);
         if (message.v !== 2) return;
         if (message.type === 'hello') {
           authenticated = true;
+          inputSequence = 0;
+          reconnectDelay = 250;
           pairing.hidden = true;
           status.textContent = 'Connected';
           sendInput();
@@ -261,22 +317,25 @@
         if (message.type === 'ping') send('pong', {sent: message.sent});
       } catch (_) {}
     };
-    socket.onclose = event => {
+    source.onclose = event => {
+      if (source !== socket) return;
       releaseAll();
       authenticated = false;
+      socket = null;
+      pendingFrame = null;
       if (event.reason === 'Authentication failed' || event.reason === 'Pairing changed') {
         credential = '';
-        sessionStorage.removeItem('widemelonPairing');
+        rememberCredential('');
         pairing.hidden = false;
         status.textContent = event.reason === 'Pairing changed' ? 'Pairing code changed' : 'Pairing failed';
         pairingCode.focus();
       } else {
         status.textContent = 'Disconnected; retrying…';
-        setTimeout(connect, reconnectDelay);
+        reconnectTimer = setTimeout(connect, reconnectDelay);
         reconnectDelay = Math.min(5000, reconnectDelay * 2);
       }
     };
-    socket.onerror = () => { status.textContent = 'Connection error'; };
+    source.onerror = () => { if (source === socket) status.textContent = 'Connection error'; };
   }
 
   document.addEventListener('visibilitychange', () => {
@@ -285,7 +344,8 @@
   });
   window.addEventListener('blur', releaseAll);
   window.addEventListener('contextmenu', event => event.preventDefault());
-  setInterval(sendInput, 200);
+  window.addEventListener('pagehide', releaseAll);
+  setInterval(sendInputNow, 200);
   const fullscreenButton = document.getElementById('fullscreen');
   fullscreenButton.addEventListener('click', () => {
     if (document.fullscreenElement) document.exitFullscreen();
@@ -299,17 +359,17 @@
   const fragment = new URLSearchParams(location.hash.slice(1)).get('pair') || '';
   if (/^[A-Za-z0-9_-]{43}$/.test(fragment)) {
     credential = fragment;
-    sessionStorage.setItem('widemelonPairing', credential);
     history.replaceState(null, '', `${location.pathname}${location.search}`);
+    rememberCredential(credential);
   } else {
-    credential = sessionStorage.getItem('widemelonPairing') || '';
+    try { credential = sessionStorage.getItem('widemelonPairing') || ''; } catch (_) {}
   }
   pairingForm.addEventListener('submit', event => {
     event.preventDefault();
     const code = pairingCode.value.replace(/\D/g, '');
     if (!/^\d{10}$/.test(code)) return;
     credential = code;
-    sessionStorage.setItem('widemelonPairing', credential);
+    rememberCredential(credential);
     pairingCode.value = '';
     pairing.hidden = true;
     connect();
