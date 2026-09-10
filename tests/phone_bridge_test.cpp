@@ -9,6 +9,7 @@
 #include <QLabel>
 #include <QGroupBox>
 #include <QPushButton>
+#include <QPlainTextEdit>
 #include <QTemporaryDir>
 #include <QFile>
 #include <QElapsedTimer>
@@ -20,6 +21,7 @@
 #include <QThread>
 #include <QTimer>
 #include <QWebSocket>
+#include <QWizard>
 #include <functional>
 #include <iostream>
 
@@ -147,6 +149,30 @@ int main(int argc, char** argv)
         application.processEvents();
         CHECK(dialog.grab().save(qEnvironmentVariable("WIDEMELON_PHONE_TEST_SCREENSHOT")));
     }
+    QPushButton* firewallGuide = nullptr;
+    for (QPushButton* button : dialog.findChildren<QPushButton*>())
+        if (button->text() == "Firewall setup guide…") firewallGuide = button;
+    CHECK(firewallGuide && firewallGuide->isEnabled());
+    QElapsedTimer guideTimer;
+    guideTimer.start();
+    firewallGuide->click();
+    CHECK(guideTimer.elapsed() < 500);
+    auto wizard = dialog.findChild<QWizard*>("phoneFirewallGuide");
+    CHECK(wizard && !wizard->isModal());
+    firewallGuide->click();
+    CHECK(dialog.findChildren<QWizard*>("phoneFirewallGuide").size() == 1);
+    for (QPlainTextEdit* text : wizard->findChildren<QPlainTextEdit*>())
+        CHECK(!text->toPlainText().contains("sudo")); // loopback needs no rule
+    if (qEnvironmentVariableIsSet("WIDEMELON_PHONE_FIREWALL_SCREENSHOT"))
+    {
+        const QString screenshot = qEnvironmentVariable("WIDEMELON_PHONE_FIREWALL_SCREENSHOT");
+        wizard->next();
+        wizard->next();
+        QApplication::processEvents();
+        CHECK(wizard->grab().save(screenshot));
+    }
+    wizard->reject();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     QTemporaryDir diagnostics;
     CHECK(diagnostics.isValid());
     CHECK(bridge.exportDiagnostics(diagnostics.filePath("diagnostics.json"), {}));

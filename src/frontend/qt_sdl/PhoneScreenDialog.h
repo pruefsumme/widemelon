@@ -58,6 +58,7 @@ private:
     QPlainTextEdit* logs;
     QPushButton* startButton;
     QPushButton* stopButton;
+    QPushButton* firewallButton;
     QTimer* refreshTimer;
     bool firewallChecked = false;
     PhoneFirewallResult firewallResult;

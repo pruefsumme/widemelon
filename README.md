@@ -70,12 +70,24 @@ immediately and saves it for later sessions.
 
 The bridge sends the native `256 × 192` bottom screen as JPEG at up to 30 FPS.
 The webpage and controls share the single displayed TCP port, which must be
-allowed by the host firewall. WideMelon detects common firewalls conservatively
-and gives graphical guidance, but never changes firewall settings or requests
-administrator authorization. Automatic firewalld checks identify its presence
-only and report access as unknown, because even its read-only rule queries can
-trigger PolicyKit authentication. It does not
-stream audio.
+allowed by the host firewall. **Firewall setup guide…** opens a native wizard
+while the bridge stays running. On Linux, it detects common firewall tools and
+lets you choose firewalld, UFW, or general system guidance. For firewalld, run the
+shown zone checks in a terminal and enter the applicable zone; WideMelon never
+guesses it or invokes an authorization-capable query. Generated rules require a
+verified private IPv4 subnet and limit access to the selected address and TCP
+port. UFW rules also select the interface. Both include persistent setup,
+verification, and removal commands; neither reloads, disables, or resets the
+firewall. Revisit the rule if the network, address, zone, or port changes.
+
+WideMelon never runs administrator commands or changes firewall rules itself.
+The user reviews and runs the shown commands. Automatic firewalld checks detect
+installation only, because even read-only queries can trigger PolicyKit. UFW
+checks use unprivileged status or its boot configuration, with an unknown result
+when access is unavailable. Unsupported firewall tools receive general guidance;
+the wizard includes native system-settings directions for future Windows/macOS
+builds, not automated firewall configuration on those platforms. If the phone
+already connects, no new firewall rule is needed. The bridge does not stream audio.
 
 > **Network warning:** use only on a private home network you trust. Pairing
 > prevents other devices from connecting, but the connection is not encrypted.
