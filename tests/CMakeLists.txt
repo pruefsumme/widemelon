@@ -7,6 +7,12 @@ option(WIDEMELON_ENABLE_STREAM_BENCHMARK
 
 include(CTest)
 if(BUILD_TESTING)
+    if(WIN32)
+        # The frontend sources include Windows headers through EmuInstance.h;
+        # keep their std::max/std::min calls safe from the Windows macros.
+        add_compile_definitions(WIN32_LEAN_AND_MEAN NOMINMAX)
+    endif()
+
     add_executable(profile_test profile_test.cpp)
     target_include_directories(profile_test PRIVATE ../src)
     foreach(width 256 308 342 448 682 768)
