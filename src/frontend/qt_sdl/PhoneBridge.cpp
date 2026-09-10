@@ -351,13 +351,13 @@ void PhoneBridgeManager::stop()
 {
     testPatternTimer->stop();
     heartbeatTimer->stop();
+    if (httpServer->isListening()) httpServer->close();
     disconnectClient();
     const QSet<QWebSocket*> pending = pendingClients;
     for (QWebSocket* socket : pending)
         closePendingClient(socket, QWebSocketProtocol::CloseCodeGoingAway, "Bridge stopped");
-    if (httpServer->isListening()) httpServer->close();
     const QSet<QTcpSocket*> tcpSockets = pendingTcpSockets;
-    for (QTcpSocket* socket : tcpSockets) socket->disconnectFromHost();
+    for (QTcpSocket* socket : tcpSockets) socket->abort();
     pendingTcpSockets.clear();
     clearPairingCredentials();
     if (currentStatus != "Off") log(Info, "lifecycle", "Phone bridge stopped");
@@ -368,15 +368,24 @@ void PhoneBridgeManager::stop()
 
 void PhoneBridgeManager::disconnectClient()
 {
+    closeClient(QWebSocketProtocol::CloseCodeNormal, "Disconnected by WideMelon");
+}
+
+void PhoneBridgeManager::closeClient(QWebSocketProtocol::CloseCode code, const QString& reason)
+{
+    // Detach authorization before close() can emit signals or process more
+    // buffered messages. Every termination path restores the fallback now.
     if (client)
     {
         QWebSocket* old = client;
         client = nullptr;
-        old->close(QWebSocketProtocol::CloseCodeNormal, "Disconnected by WideMelon");
+        if (old->state() == QAbstractSocket::ConnectedState) old->close(code, reason);
         old->deleteLater();
+        log(Info, "websocket", "Phone disconnected; restored desktop bottom screen");
     }
     pendingPacket.clear();
     frameInFlight = false;
+    clientAddressLabel.clear();
     resetRemoteInput();
     setConnected(false);
     if (isListening()) currentStatus = "Waiting for paired phone";
@@ -405,7 +414,7 @@ QString PhoneBridgeManager::lastError() const { return errorText; }
 void PhoneBridgeManager::regeneratePairing()
 {
     if (!isListening()) return;
-    disconnectClient();
+    closeClient(QWebSocketProtocol::CloseCodePolicyViolated, "Pairing changed");
     const QSet<QWebSocket*> pending = pendingClients;
     for (QWebSocket* socket : pending)
         closePendingClient(socket, QWebSocketProtocol::CloseCodePolicyViolated, "Pairing changed");
@@ -530,6 +539,7 @@ void PhoneBridgeManager::acceptTcpConnections()
 
 void PhoneBridgeManager::handleTcpSocket(QTcpSocket* socket)
 {
+    socket->setReadBufferSize(PhoneProtocol::MaxHttpHeader + 1);
     socket->setParent(this);
     if (!peerAllowed(socket->peerAddress()))
     {
@@ -542,7 +552,7 @@ void PhoneBridgeManager::handleTcpSocket(QTcpSocket* socket)
     QTimer* timeout = new QTimer(socket);
     timeout->setSingleShot(true);
     timeout->start(3000);
-    connect(timeout, &QTimer::timeout, socket, &QTcpSocket::disconnectFromHost);
+    connect(timeout, &QTimer::timeout, socket, &QTcpSocket::abort);
     connect(socket, &QTcpSocket::disconnected, this, [this, socket]
     {
         pendingTcpSockets.remove(socket);
@@ -552,6 +562,7 @@ void PhoneBridgeManager::handleTcpSocket(QTcpSocket* socket)
     {
         if (!socket->property("routed").toBool()) routeTcpSocket(socket);
     });
+    if (socket->bytesAvailable()) routeTcpSocket(socket);
 }
 
 void PhoneBridgeManager::routeTcpSocket(QTcpSocket* socket)
@@ -559,6 +570,7 @@ void PhoneBridgeManager::routeTcpSocket(QTcpSocket* socket)
     const QByteArray data = socket->peek(PhoneProtocol::MaxHttpHeader + 1);
     if (data.size() > PhoneProtocol::MaxHttpHeader)
     {
+        socket->setProperty("routed", true);
         socket->write(httpReply(431, "Request Header Fields Too Large", "text/plain", "Request too large\n"));
         socket->disconnectFromHost();
         return;
@@ -566,6 +578,7 @@ void PhoneBridgeManager::routeTcpSocket(QTcpSocket* socket)
     const QByteArray expected = currentSettings.address.toUtf8() + ':' + QByteArray::number(currentSettings.basePort);
     const PhoneProtocol::HttpRequest request = PhoneProtocol::ParseHttpRequest(data, expected);
     if (request.kind == PhoneProtocol::HttpRequestKind::NeedMore) return;
+    socket->setProperty("routed", true);
     if (request.kind == PhoneProtocol::HttpRequestKind::Invalid)
     {
         socket->write(httpReply(400, "Bad Request", "text/plain", "Invalid request\n"));
@@ -575,7 +588,6 @@ void PhoneBridgeManager::routeTcpSocket(QTcpSocket* socket)
 
     if (request.kind == PhoneProtocol::HttpRequestKind::WebSocket)
     {
-        socket->setProperty("routed", true);
         if (QTimer* timeout = socket->findChild<QTimer*>()) timeout->stop();
         pendingTcpSockets.remove(socket);
         socket->disconnect(this);
@@ -622,7 +634,7 @@ void PhoneBridgeManager::acceptWebSocket()
         QWebSocket* socket = webSocketServer->nextPendingConnection();
         socket->setMaxAllowedIncomingFrameSize(PhoneProtocol::MaxControlMessage);
         socket->setMaxAllowedIncomingMessageSize(PhoneProtocol::MaxControlMessage);
-        if (socket->requestUrl().path() != "/bridge" || !socket->requestUrl().query().isEmpty()
+        if (!isListening() || socket->requestUrl().path() != "/bridge" || !socket->requestUrl().query().isEmpty()
             || !peerAllowed(socket->peerAddress()))
         {
             socket->close(QWebSocketProtocol::CloseCodePolicyViolated, "Invalid endpoint");
@@ -652,27 +664,21 @@ void PhoneBridgeManager::acceptWebSocket()
                 closePendingClient(socket, QWebSocketProtocol::CloseCodeDatatypeNotSupported, "Authentication required");
             else if (client == socket)
             {
-                resetRemoteInput();
-                client->close(QWebSocketProtocol::CloseCodeDatatypeNotSupported, "Client binary messages are not supported");
+                closeClient(QWebSocketProtocol::CloseCodeDatatypeNotSupported, "Client binary messages are not supported");
             }
+        });
+        connect(socket, &QWebSocket::stateChanged, this, [this, socket](QAbstractSocket::SocketState state)
+        {
+            // Qt also closes sockets internally for invalid WebSocket frames.
+            if (client == socket && state != QAbstractSocket::ConnectedState)
+                closeClient(QWebSocketProtocol::CloseCodeGoingAway, "Connection ended");
         });
         connect(socket, &QWebSocket::disconnected, this, [this, socket]
         {
-            const bool authenticated = client == socket;
             pendingClients.remove(socket);
-            if (authenticated) client = nullptr;
+            if (client == socket)
+                closeClient(QWebSocketProtocol::CloseCodeGoingAway, "Connection ended");
             socket->deleteLater();
-            if (authenticated)
-            {
-                pendingPacket.clear();
-                frameInFlight = false;
-                clientAddressLabel.clear();
-                resetRemoteInput();
-                setConnected(false);
-                if (isListening()) currentStatus = "Waiting for paired phone";
-                log(Info, "websocket", "Phone disconnected; restored desktop bottom screen");
-                emit statusChanged();
-            }
         });
         QTimer::singleShot(kAuthenticationTimeoutMs, socket, [this, socket]
         {
@@ -718,6 +724,7 @@ void PhoneBridgeManager::authenticateClient(QWebSocket* socket)
     client = socket;
     clientAddressLabel = sanitizedAddress(socket->peerAddress());
     lastHeartbeatMs = heartbeatClock.elapsed();
+    lastPingSentMs = 0;
     controlRateWindowMs = lastHeartbeatMs;
     controlMessagesInWindow = 0;
     currentStatus = "Connected to paired phone";
@@ -733,6 +740,7 @@ void PhoneBridgeManager::closePendingClient(QWebSocket* socket, QWebSocketProtoc
 {
     pendingClients.remove(socket);
     socket->close(code, reason);
+    socket->deleteLater();
 }
 
 bool PhoneBridgeManager::peerAllowed(const QHostAddress& peer) const
@@ -793,15 +801,13 @@ void PhoneBridgeManager::handleTextMessage(const QString& message)
     if (++controlMessagesInWindow > 240)
     {
         log(Error, "protocol", "Control-message rate limit exceeded");
-        resetRemoteInput();
-        if (client) client->close(QWebSocketProtocol::CloseCodePolicyViolated, "Message rate limit");
+        closeClient(QWebSocketProtocol::CloseCodePolicyViolated, "Message rate limit");
         return;
     }
     if (message.toUtf8().size() > PhoneProtocol::MaxControlMessage)
     {
         log(Error, "protocol", "Oversized control message");
-        resetRemoteInput();
-        if (client) client->close(QWebSocketProtocol::CloseCodeTooMuchData, "Control message too large");
+        closeClient(QWebSocketProtocol::CloseCodeTooMuchData, "Control message too large");
         return;
     }
     QJsonParseError parseError;
@@ -810,8 +816,7 @@ void PhoneBridgeManager::handleTextMessage(const QString& message)
     {
         { QMutexLocker lock(&stateMutex); currentMetrics.protocolErrors++; }
         log(Debug, "protocol", "Rejected malformed JSON");
-        resetRemoteInput();
-        if (client) client->close(QWebSocketProtocol::CloseCodeProtocolError, "Protocol violation");
+        closeClient(QWebSocketProtocol::CloseCodeProtocolError, "Protocol violation");
         return;
     }
     const QJsonObject object = document.object();
@@ -819,8 +824,7 @@ void PhoneBridgeManager::handleTextMessage(const QString& message)
     {
         { QMutexLocker lock(&stateMutex); currentMetrics.protocolErrors++; }
         log(Debug, "protocol", "Rejected unknown protocol version or message type");
-        resetRemoteInput();
-        if (client) client->close(QWebSocketProtocol::CloseCodeProtocolError, "Protocol violation");
+        closeClient(QWebSocketProtocol::CloseCodeProtocolError, "Protocol violation");
         return;
     }
     const QString type = object.value("type").toString();
@@ -832,8 +836,7 @@ void PhoneBridgeManager::handleTextMessage(const QString& message)
         {
             { QMutexLocker lock(&stateMutex); currentMetrics.protocolErrors++; }
             log(Debug, "protocol", "Rejected invalid input snapshot");
-            resetRemoteInput();
-            if (client) client->close(QWebSocketProtocol::CloseCodeProtocolError, "Protocol violation");
+            closeClient(QWebSocketProtocol::CloseCodeProtocolError, "Protocol violation");
             return;
         }
         lastInputSequence = sequence;
@@ -852,8 +855,7 @@ void PhoneBridgeManager::handleTextMessage(const QString& message)
             || sequenceValue != quint32(sequenceValue))
         {
             { QMutexLocker lock(&stateMutex); currentMetrics.protocolErrors++; }
-            resetRemoteInput();
-            if (client) client->close(QWebSocketProtocol::CloseCodeProtocolError, "Protocol violation");
+            closeClient(QWebSocketProtocol::CloseCodeProtocolError, "Protocol violation");
             return;
         }
         lastHeartbeatMs = messageTime;
@@ -868,18 +870,16 @@ void PhoneBridgeManager::handleTextMessage(const QString& message)
     else if (type == "pong")
     {
         const double sentValue = object.value("sent").toDouble(-1);
-        const qint64 sent = qint64(sentValue);
-        if (object.value("sent").isDouble() && sent > 0 && sentValue == sent && sent == lastPingSentMs)
+        if (object.value("sent").isDouble() && lastPingSentMs > 0 && sentValue == double(lastPingSentMs))
         {
             lastHeartbeatMs = messageTime;
             QMutexLocker lock(&stateMutex);
-            currentMetrics.roundTripMs = std::max<qint64>(0, heartbeatClock.elapsed() - sent);
+            currentMetrics.roundTripMs = std::max<qint64>(0, heartbeatClock.elapsed() - lastPingSentMs);
         }
         else
         {
             { QMutexLocker lock(&stateMutex); currentMetrics.protocolErrors++; }
-            resetRemoteInput();
-            if (client) client->close(QWebSocketProtocol::CloseCodeProtocolError, "Protocol violation");
+            closeClient(QWebSocketProtocol::CloseCodeProtocolError, "Protocol violation");
         }
     }
     else if (type == "visibility" && object.value("hidden").isBool())
@@ -891,8 +891,7 @@ void PhoneBridgeManager::handleTextMessage(const QString& message)
     {
         { QMutexLocker lock(&stateMutex); currentMetrics.protocolErrors++; }
         log(Debug, "protocol", "Rejected unexpected authenticated-client message");
-        resetRemoteInput();
-        if (client) client->close(QWebSocketProtocol::CloseCodeProtocolError, "Protocol violation");
+        closeClient(QWebSocketProtocol::CloseCodeProtocolError, "Protocol violation");
     }
 }
 
@@ -917,8 +916,7 @@ void PhoneBridgeManager::checkHeartbeat()
     if (now - lastHeartbeatMs > kHeartbeatTimeoutMs)
     {
         log(Error, "websocket", "Heartbeat timed out; releasing all phone input");
-        client->close(QWebSocketProtocol::CloseCodeGoingAway, "Heartbeat timeout");
-        resetRemoteInput();
+        closeClient(QWebSocketProtocol::CloseCodeGoingAway, "Heartbeat timeout");
         return;
     }
     if (now - lastPingSentMs >= 500)

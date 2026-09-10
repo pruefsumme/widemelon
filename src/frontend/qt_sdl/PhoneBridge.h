@@ -123,6 +123,7 @@ private:
     enum LogLevel { Error = 0, Info = 1, Debug = 2, Trace = 3 };
     void log(LogLevel level, const QString& category, const QString& message) const;
     void resetRemoteInput();
+    void closeClient(QWebSocketProtocol::CloseCode code, const QString& reason);
     void setConnected(bool value);
     void handleTcpSocket(class QTcpSocket* socket);
     void routeTcpSocket(class QTcpSocket* socket);
