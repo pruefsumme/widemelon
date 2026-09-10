@@ -137,7 +137,7 @@ private:
     void generatePairingCredentials();
     void clearPairingCredentials();
     void handleTextMessage(const QString& message);
-    void encodedFrameReady(quint32 generation, quint32 sequence, const QByteArray& jpeg, double encodeMs);
+    void encodedFrameReady(quint32 generation, quint32 sequence, const QByteArray& jpeg);
     void sendPendingFrame();
     void sendLayout();
     void rotateLogIfNeeded() const;

@@ -3,6 +3,7 @@
 
 #include "frontend/qt_sdl/PhoneProtocol.h"
 #include "frontend/qt_sdl/PhoneSecurity.h"
+#include "frontend/qt_sdl/PhoneFramePacer.h"
 
 #include <cstring>
 #include <iostream>
@@ -18,6 +19,15 @@
 int main(int argc, char** argv)
 {
     QCoreApplication application(argc, argv);
+    for (const std::int64_t refresh : {16666666LL, 16666667LL, 16715000LL})
+    {
+        PhoneFramePacer pacer;
+        int captures = 0;
+        for (std::int64_t tick = 0; tick < 600; tick++)
+            if (pacer.due(1000000000LL + tick * refresh + (tick % 3) * 100000)) captures++;
+        if (captures < 299 || captures > 302) return 45;
+        if (!pacer.due(100000000000LL) || pacer.due(100000000001LL)) return 46;
+    }
     if (!PhoneProtocol::IsPrivateIPv4(QHostAddress("10.1.2.3").toIPv4Address())) return 1;
     if (!PhoneProtocol::IsPrivateIPv4(QHostAddress("172.16.4.5").toIPv4Address())) return 2;
     if (!PhoneProtocol::IsPrivateIPv4(QHostAddress("192.168.1.9").toIPv4Address())) return 3;

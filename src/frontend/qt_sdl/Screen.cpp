@@ -1081,6 +1081,7 @@ void ScreenPanelGL::deinitOpenGL()
     phoneCapturePBO[0] = phoneCapturePBO[1] = 0;
     phoneCapturePrimed = false;
     phoneCaptureMapWarned = false;
+    phoneFramePacer.reset();
 
     glDeleteVertexArrays(1, &screenVertexArray);
     glDeleteBuffers(1, &screenVertexBuffer);
@@ -1331,8 +1332,7 @@ void ScreenPanelGL::capturePhoneFrame(GLuint sourceTexture, int sourceWidth, int
 
     const qint64 now = std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
-    if (phoneLastCaptureNs != 0 && now - phoneLastCaptureNs < 33333333) return;
-    phoneLastCaptureNs = now;
+    if (!phoneFramePacer.due(now)) return;
 
     GLint oldReadFramebuffer = 0, oldDrawFramebuffer = 0;
     GLint oldReadBuffer = 0, oldDrawBuffer = 0, oldPackBuffer = 0, oldPackAlignment = 0;

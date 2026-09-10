@@ -105,9 +105,13 @@ int main(int argc, char** argv)
     // Two sockets can finish the handshake before either authenticates.
     QWebSocket first, second;
     int firstMessages = 0, secondMessages = 0, frameCount = 0;
+    quint32 receivedSequence = 0;
     QObject::connect(&first, &QWebSocket::textMessageReceived, [&] { firstMessages++; });
     QObject::connect(&second, &QWebSocket::textMessageReceived, [&] { secondMessages++; });
-    QObject::connect(&first, &QWebSocket::binaryMessageReceived, [&] { frameCount++; });
+    QObject::connect(&first, &QWebSocket::binaryMessageReceived, [&](const QByteArray& packet) {
+        frameCount++;
+        receivedSequence = qFromLittleEndian<quint32>(reinterpret_cast<const uchar*>(packet.constData() + 4));
+    });
     CHECK(open(first) && open(second));
     auth(first, originalCode);
     auth(second, originalCode);
@@ -116,6 +120,20 @@ int main(int argc, char** argv)
     CHECK(secondMessages == 0);
     bridge.submitFrame(frame);
     CHECK(waitUntil([&] { return frameCount == 1; }));
+    const quint32 firstSequence = receivedSequence;
+    // Stall GUI delivery while the encoder produces frames. Only the newest
+    // result may reach the socket once the first frame is acknowledged.
+    for (int i = 0; i < 12; i++)
+    {
+        bridge.submitFrame(frame);
+        QThread::msleep(3);
+    }
+    CHECK(bridge.metrics().framesDropped > 0);
+    CHECK(frameCount == 1);
+    send(first, {{"v", 2}, {"type", "frameAck"}, {"seq", double(firstSequence)}});
+    CHECK(waitUntil([&] { return frameCount == 2; }));
+    CHECK(receivedSequence == bridge.metrics().framesOffered);
+    std::cout << "JPEG average " << bridge.metrics().averageEncodeMs << " ms; latest-frame replacement passed\n";
     send(first, input());
     CHECK(waitUntil([&] { return bridge.remoteKeyMask() == 0xFFE; }));
     CHECK(bridge.remoteHotkeyMask() == 16 && bridge.remoteTouchSnapshot() != 0);

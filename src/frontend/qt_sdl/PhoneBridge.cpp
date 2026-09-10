@@ -144,17 +144,52 @@ protected:
             const bool ok = writer.write(image);
             const double elapsed = timer.nsecsElapsed() / 1000000.0;
             const QString error = ok ? QString() : writer.errorString();
-            QMetaObject::invokeMethod(owner, [this, generation, sequence, bytes, elapsed, error]
+            bool notify;
             {
-                if (!error.isEmpty())
-                    owner->log(Error, "encode", "JPEG encoding failed: " + error);
+                QMutexLocker lock(&mutex);
+                notify = !resultPending;
+                result = {generation, sequence, std::move(bytes), error};
+                resultPending = true;
+            }
+            {
+                QMutexLocker lock(&owner->stateMutex);
+                auto& metrics = owner->currentMetrics;
+                if (!notify) metrics.framesDropped++;
+                if (ok)
+                {
+                    metrics.framesEncoded++;
+                    metrics.lastEncodeMs = elapsed;
+                    metrics.averageEncodeMs += (elapsed - metrics.averageEncodeMs) / double(metrics.framesEncoded);
+                }
+            }
+            // Keep just one delivery event and replace its result if the GUI
+            // thread is busy. A queued lambda per JPEG would be an unbounded queue.
+            if (notify) QMetaObject::invokeMethod(owner, [this]
+            {
+                Result ready;
+                {
+                    QMutexLocker lock(&mutex);
+                    ready = std::move(result);
+                    resultPending = false;
+                }
+                if (!ready.error.isEmpty())
+                    owner->log(Error, "encode", "JPEG encoding failed: " + ready.error);
                 else
-                    owner->encodedFrameReady(generation, sequence, bytes, elapsed);
+                    owner->encodedFrameReady(ready.generation, ready.sequence, ready.bytes);
             }, Qt::QueuedConnection);
         }
     }
 
 private:
+    struct Result
+    {
+        quint32 generation = 0;
+        quint32 sequence = 0;
+        QByteArray bytes;
+        QString error;
+    };
+    Result result;
+    bool resultPending = false;
     PhoneBridgeManager* owner;
     QMutex mutex;
     QWaitCondition condition;
@@ -178,6 +213,7 @@ PhoneBridgeManager::PhoneBridgeManager(QObject* parent) : QObject(parent)
     heartbeatTimer->setInterval(250);
     testPatternTimer = new QTimer(this);
     testPatternTimer->setInterval(33);
+    testPatternTimer->setTimerType(Qt::PreciseTimer);
     encoder = std::make_unique<EncoderThread>(this);
     encoder->start();
 
@@ -540,6 +576,7 @@ void PhoneBridgeManager::acceptTcpConnections()
 void PhoneBridgeManager::handleTcpSocket(QTcpSocket* socket)
 {
     socket->setReadBufferSize(PhoneProtocol::MaxHttpHeader + 1);
+    socket->setSocketOption(QAbstractSocket::LowDelayOption, 1);
     socket->setParent(this);
     if (!peerAllowed(socket->peerAddress()))
     {
@@ -652,6 +689,10 @@ void PhoneBridgeManager::acceptWebSocket()
         }
         socket->setParent(this);
         pendingClients.insert(socket);
+        connect(socket, &QWebSocket::bytesWritten, this, [this, socket]
+        {
+            if (client == socket) sendPendingFrame();
+        });
         connect(socket, &QWebSocket::textMessageReceived, this, [this, socket](const QString& message)
         {
             if (pendingClients.contains(socket)) handlePendingMessage(socket, message);
@@ -943,16 +984,13 @@ void PhoneBridgeManager::emitTestPattern()
 }
 
 void PhoneBridgeManager::encodedFrameReady(quint32 generation, quint32 sequence,
-                                           const QByteArray& jpeg, double encodeMs)
+                                           const QByteArray& jpeg)
 {
     if (!connected.load() || generation != connectionGeneration.load()) return;
     QByteArray packet = PhoneProtocol::BuildFrame(sequence,
         quint64(heartbeatClock.nsecsElapsed() / 1000), jpeg);
     {
         QMutexLocker lock(&stateMutex);
-        currentMetrics.framesEncoded++;
-        currentMetrics.lastEncodeMs = encodeMs;
-        currentMetrics.averageEncodeMs += (encodeMs - currentMetrics.averageEncodeMs) / double(currentMetrics.framesEncoded);
         currentMetrics.lastFrameBytes = jpeg.size();
     }
     if (frameInFlight)
@@ -969,7 +1007,7 @@ void PhoneBridgeManager::encodedFrameReady(quint32 generation, quint32 sequence,
 
 void PhoneBridgeManager::sendPendingFrame()
 {
-    if (!client || pendingPacket.isEmpty() || frameInFlight) return;
+    if (!client || pendingPacket.isEmpty() || frameInFlight || client->bytesToWrite() != 0) return;
     const QByteArray packet = std::move(pendingPacket);
     pendingPacket.clear();
     inFlightSequence = pendingSequence;
