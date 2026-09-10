@@ -7,6 +7,7 @@ dist/
 /tools/faad2/
 /tools/enet/
 /tools/local/
+__pycache__/
 bin
 obj
 *.depend
