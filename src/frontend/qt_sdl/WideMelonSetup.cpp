@@ -12,13 +12,16 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMessageBox>
+#include <QMoveEvent>
 #include <QPushButton>
 #include <QSpinBox>
 #include <QVBoxLayout>
+#include <QTimer>
 
 #include "EmuInstance.h"
 #include "WideMelon.h"
 #include "ScreenLayout.h"
+#include "PhoneScreenDialog.h"
 
 namespace
 {
@@ -169,7 +172,11 @@ public:
             "1280 × 720", "1600 × 900", "1920 × 1080", "2560 × 1440",
             "3440 × 1440", "3840 × 2160", "Custom window"
         });
-        videoLayout->addRow("Window resolution", resolution);
+        auto resolutionRow = new QHBoxLayout;
+        resolutionRow->addWidget(resolution, 1);
+        auto phoneButton = new QPushButton("Phone screen…");
+        resolutionRow->addWidget(phoneButton);
+        videoLayout->addRow("Window resolution", resolutionRow);
 
         auto dimensions = new QHBoxLayout;
         windowWidth = new QSpinBox;
@@ -244,9 +251,11 @@ public:
                 [this] { updateSummary(); });
         connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
         connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
+        connect(phoneButton, &QPushButton::clicked, this, [this] { showPhoneDialog(); });
 
         updateViewportControls();
         updateResolutionControls();
+        QTimer::singleShot(0, this, [this] { showPhoneDialog(); });
     }
 
     bool apply()
@@ -271,6 +280,32 @@ public:
     bool startFullscreen() const { return fullscreen->isChecked(); }
 
 private:
+    void showPhoneDialog()
+    {
+        if (!phoneDialog)
+        {
+            PhoneBridgeManager* bridge = nullptr;
+            if (!startup)
+            {
+                auto window = qobject_cast<MainWindow*>(parentWidget());
+                if (window) bridge = window->getEmuInstance()->getPhoneBridge();
+            }
+            phoneDialog = new PhoneScreenDialog(bridge, startup, this);
+        }
+        phoneDialog->show();
+        phoneDialog->positionBeside(this);
+        phoneDialog->raise();
+    }
+
+protected:
+    void moveEvent(QMoveEvent* event) override
+    {
+        QDialog::moveEvent(event);
+        if (phoneDialog && phoneDialog->isVisible()) phoneDialog->positionBeside(this);
+    }
+
+private:
+
     void updateViewportControls()
     {
         const bool custom = viewport->currentData().toInt() == 0;
@@ -317,6 +352,7 @@ private:
     QCheckBox* integerScaling;
     QCheckBox* fullscreen;
     QCheckBox* doNotShowAgain;
+    PhoneScreenDialog* phoneDialog = nullptr;
     bool startup;
 };
 

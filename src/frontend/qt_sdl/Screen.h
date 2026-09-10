@@ -129,6 +129,7 @@ protected:
     void loadConfig();
 
     virtual void setupScreenLayout();
+    int effectiveScreenSizing() const;
 
     void resizeEvent(QResizeEvent* event) override;
 
@@ -239,9 +240,19 @@ private:
 
     GLuint logoTexture;
 
+    GLuint phoneCaptureFramebuffer = 0;
+    GLuint phoneSourceFramebuffer = 0;
+    GLuint phoneCaptureTexture = 0;
+    GLuint phoneCapturePBO[2] = {0, 0};
+    int phoneCapturePBOIndex = 0;
+    bool phoneCapturePrimed = false;
+    bool phoneCaptureMapWarned = false;
+    qint64 phoneLastCaptureNs = 0;
+
+    void capturePhoneFrame(GLuint sourceTexture, int sourceWidth, int sourceHeight);
+
     void osdRenderItem(OSDItem* item) override;
     void osdDeleteItem(OSDItem* item) override;
 };
 
 #endif // SCREEN_H
-

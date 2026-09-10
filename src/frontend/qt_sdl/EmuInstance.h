@@ -29,6 +29,8 @@
 #include "Config.h"
 #include "SaveManager.h"
 
+class PhoneBridgeManager;
+
 const int kMaxWindows = 4;
 
 enum
@@ -93,6 +95,7 @@ public:
     melonDS::NDS* getNDS() { return nds; }
 
     MainWindow* getMainWindow() { return mainWindow; }
+    PhoneBridgeManager* getPhoneBridge() { return phoneBridge.get(); }
     int getNumWindows() { return numWindows; }
     MainWindow* getWindow(int id) { return windowList[id]; }
 
@@ -377,6 +380,8 @@ private:
 
     bool isTouching;
     melonDS::u16 touchX, touchY;
+
+    std::unique_ptr<PhoneBridgeManager> phoneBridge;
 
     friend class EmuThread;
     friend class MainWindow;

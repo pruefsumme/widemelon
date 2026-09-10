@@ -1,0 +1,7 @@
+<RCC>
+  <qresource prefix="/phone">
+    <file>index.html</file>
+    <file>app.js</file>
+    <file>app.css</file>
+  </qresource>
+</RCC>

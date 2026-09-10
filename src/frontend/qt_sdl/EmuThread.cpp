@@ -29,6 +29,7 @@
 #include <SDL2/SDL.h>
 
 #include "WideMelon.h"
+#include "PhoneBridge.h"
 #include "main.h"
 
 #include "types.h"
@@ -255,7 +256,11 @@ void EmuThread::run()
             // process input and hotkeys
             emuInstance->nds->SetKeyMask(emuInstance->inputMask);
 
-            if (emuInstance->isTouching)
+            const u32 phoneTouch = emuInstance->phoneBridge
+                ? emuInstance->phoneBridge->remoteTouchSnapshot() : 0;
+            if (phoneTouch & 0x80000000U)
+                emuInstance->nds->TouchScreen(phoneTouch & 0xFF, (phoneTouch >> 8) & 0xFF);
+            else if (emuInstance->isTouching)
                 emuInstance->nds->TouchScreen(emuInstance->touchX, emuInstance->touchY);
             else
                 emuInstance->nds->ReleaseScreen();

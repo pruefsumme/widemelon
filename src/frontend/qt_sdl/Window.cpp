@@ -18,6 +18,8 @@
 
 #include "WideMelon.h"
 #include "WideMelonSetup.h"
+#include "PhoneBridge.h"
+#include "PhoneScreenDialog.h"
 #include "NDS.h"
 #include <stdlib.h>
 #include <time.h>
@@ -595,6 +597,9 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
             actWideMelonSettings = menu->addAction("WideMelon settings...");
             connect(actWideMelonSettings, &QAction::triggered, this, &MainWindow::onOpenWideMelonSettings);
 
+            actPhoneScreenSettings = menu->addAction("Phone screen & controller...");
+            connect(actPhoneScreenSettings, &QAction::triggered, this, &MainWindow::onOpenPhoneScreenSettings);
+
             actVideoSettings = menu->addAction("Video settings");
             connect(actVideoSettings, &QAction::triggered, this, &MainWindow::onOpenVideoSettings);
 
@@ -745,6 +750,7 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
         {
             actEmuSettings->setEnabled(false);
             actWideMelonSettings->setEnabled(false);
+            actPhoneScreenSettings->setEnabled(false);
             actVideoSettings->setEnabled(false);
             actMPSettings->setEnabled(false);
             actWifiSettings->setEnabled(false);
@@ -870,6 +876,9 @@ void MainWindow::createScreenPanel()
     connect(emuThread, SIGNAL(windowUpdate()), panel, SLOT(repaint()));
 
     connect(this, SIGNAL(screenLayoutChange()), panel, SLOT(onScreenLayoutChanged()));
+    if (emuInstance->getPhoneBridge())
+        connect(emuInstance->getPhoneBridge(), &PhoneBridgeManager::connectionChanged,
+                this, [this] { emit screenLayoutChange(); });
     emit screenLayoutChange();
 }
 
@@ -1871,6 +1880,11 @@ void MainWindow::onOpenVideoSettings()
 void MainWindow::onOpenWideMelonSettings()
 {
     WideMelon::OpenSettings(this);
+}
+
+void MainWindow::onOpenPhoneScreenSettings()
+{
+    WideMelon::OpenPhoneScreenSettings(emuInstance->getPhoneBridge(), this);
 }
 
 void MainWindow::onOpenCameraSettings()

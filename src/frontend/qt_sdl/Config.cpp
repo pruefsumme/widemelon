@@ -72,6 +72,9 @@ DefaultList<int> DefaultInts =
     {"Instance*.Gdb.ARM9.Port", 3333},
 #endif
     {"LAN.HostNumPlayers", 16},
+    {"WideMelon.Phone.BasePort", 24800},
+    {"WideMelon.Phone.JpegQuality", 85},
+    {"WideMelon.Phone.LogLevel", 1},
 };
 
 RangeList IntRanges =
@@ -91,6 +94,9 @@ RangeList IntRanges =
     {"Instance*.Window*.ScreenAspectBot", {0, AspectRatiosNum-1}},
     {"MP.AudioMode", {0, 2}},
     {"LAN.HostNumPlayers", {2, 16}},
+    {"WideMelon.Phone.BasePort", {1024, 65534}},
+    {"WideMelon.Phone.JpegQuality", {30, 100}},
+    {"WideMelon.Phone.LogLevel", {0, 3}},
 };
 
 DefaultList<bool> DefaultBools =
@@ -112,13 +118,18 @@ DefaultList<bool> DefaultBools =
 #endif
     {"DSi.DSP.HLE", true},
     {"Instance*.RTC.SyncToHost", true},
+    {"WideMelon.Phone.ConsoleLog", true},
+    {"WideMelon.Phone.FileLog", false},
+    {"WideMelon.Phone.SynchronousCapture", false},
 };
 
 DefaultList<std::string> DefaultStrings =
 {
     {"DLDI.ImagePath",                  "dldi.bin"},
     {"DSi.SD.ImagePath",                "dsisd.bin"},
-    {"Instance*.Firmware.Username",     "melonDS"}
+    {"Instance*.Firmware.Username",     "melonDS"},
+    {"WideMelon.Phone.Interface",       ""},
+    {"WideMelon.Phone.Layout",          ""}
 };
 
 DefaultList<double> DefaultDoubles =

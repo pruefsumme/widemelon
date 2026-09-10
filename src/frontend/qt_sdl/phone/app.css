@@ -1,0 +1,286 @@
+:root {
+  color-scheme: dark;
+  font-family: Arial, sans-serif;
+  background: #000;
+  color: #d9d9d9;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+html, body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+  overflow: hidden;
+  touch-action: none;
+}
+
+body {
+  background: #000;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+    env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+button {
+  border: 1px solid rgba(255, 255, 255, .32);
+  color: rgba(12, 12, 12, .88);
+  background: linear-gradient(145deg, #f1f1f1, #b7b7b7);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .48),
+    inset 0 -1px 0 rgba(0, 0, 0, .2),
+    0 2px 5px rgba(0, 0, 0, .5);
+  opacity: .65;
+  font-weight: 600;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button.active, button:active {
+  opacity: .82;
+  background: linear-gradient(145deg, #ababab, #e1e1e1);
+  box-shadow: inset 0 2px 3px rgba(0, 0, 0, .28), 0 1px 2px rgba(0, 0, 0, .45);
+  transform: translateY(1px);
+}
+
+#hud {
+  position: fixed;
+  z-index: 3;
+  top: max(8px, env(safe-area-inset-top));
+  left: max(10px, env(safe-area-inset-left));
+  max-width: 72vw;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  overflow: hidden;
+  color: rgba(255, 255, 255, .48);
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+#status, #metrics {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#metrics {
+  color: rgba(255, 255, 255, .34);
+  font: 9px/1 monospace;
+}
+
+#metrics::before {
+  content: "·";
+  margin-right: 7px;
+  color: rgba(255, 255, 255, .28);
+}
+
+#fullscreen {
+  position: fixed;
+  z-index: 3;
+  top: max(6px, env(safe-area-inset-top));
+  right: max(8px, env(safe-area-inset-right));
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 7px;
+}
+
+#fullscreen svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+main {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+[data-layout-id] { position: absolute; }
+
+.shoulder {
+  min-height: 0;
+  border-radius: 9px;
+  font-size: 13px;
+}
+
+#dpad {
+  color: rgba(10, 10, 10, .76);
+  font-size: clamp(8px, 1.2vw, 12px);
+  line-height: 1;
+  opacity: .65;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#dpad::before, #dpad::after {
+  content: "";
+  position: absolute;
+  background: linear-gradient(145deg, #ededed, #adadad);
+  border: 1px solid rgba(255, 255, 255, .32);
+  box-shadow:
+    inset 1px 1px 1px rgba(255, 255, 255, .46),
+    inset -1px -1px 1px rgba(0, 0, 0, .2),
+    0 2px 5px rgba(0, 0, 0, .5);
+}
+
+#dpad::before { left: 0; top: 35%; width: 100%; height: 30%; border-radius: 6px; }
+#dpad::after { left: 35%; top: 0; width: 30%; height: 100%; border-radius: 6px; }
+
+#dpad.active {
+  opacity: .82;
+  transform: translateY(1px);
+}
+
+#dpad.active::before, #dpad.active::after {
+  background: linear-gradient(145deg, #aeaeae, #dedede);
+  box-shadow: inset 0 2px 3px rgba(0, 0, 0, .25);
+}
+
+#dpad span { position: absolute; z-index: 2; pointer-events: none; }
+#dpad .up { left: 47%; top: 9%; }
+#dpad .down { left: 47%; bottom: 9%; }
+#dpad .left { left: 9%; top: 47%; }
+#dpad .right { right: 9%; top: 47%; }
+
+#dpad .pivot {
+  left: 42%;
+  top: 42%;
+  width: 16%;
+  height: 16%;
+  border-radius: 50%;
+  background: rgba(120, 120, 120, .55);
+  box-shadow: inset 1px 1px 1px rgba(255, 255, 255, .2);
+}
+
+#dpad.analog::before {
+  inset: 0;
+  width: auto;
+  height: auto;
+  border-radius: 50%;
+  background: linear-gradient(145deg, #dedede 0, #a8a8a8 72%, #909090 100%);
+  box-shadow:
+    inset 1px 1px 2px rgba(255, 255, 255, .42),
+    inset -2px -2px 3px rgba(0, 0, 0, .24),
+    0 2px 5px rgba(0, 0, 0, .5);
+}
+
+#dpad.analog::after {
+  display: none;
+}
+
+#dpad.analog .up,
+#dpad.analog .down,
+#dpad.analog .left,
+#dpad.analog .right { display: none; }
+
+#dpad.analog .pivot {
+  left: 19%;
+  top: 19%;
+  width: 62%;
+  height: 62%;
+  z-index: 3;
+  border: 1px solid rgba(255, 255, 255, .44);
+  background: radial-gradient(circle at 38% 30%, #ededed 0, #c6c6c6 58%, #a0a0a0 100%);
+  box-shadow:
+    inset 1px 1px 2px rgba(255, 255, 255, .5),
+    inset -1px -2px 2px rgba(0, 0, 0, .18),
+    0 2px 4px rgba(0, 0, 0, .38);
+  transform: translate(var(--stick-x, 0), var(--stick-y, 0));
+}
+
+#dpad.analog.active::before {
+  background: linear-gradient(145deg, #c9c9c9 0, #9e9e9e 75%, #898989 100%);
+  box-shadow: inset 1px 2px 3px rgba(0, 0, 0, .22), 0 1px 3px rgba(0, 0, 0, .42);
+}
+
+#face {
+  min-width: 0;
+  min-height: 0;
+}
+
+.face-button {
+  position: absolute;
+  width: 36%;
+  height: 36%;
+  min-width: 0;
+  min-height: 0;
+  border-radius: 50%;
+  font-size: clamp(12px, 1.8vw, 18px);
+}
+
+.face-button.x { left: 32%; top: 0; }
+.face-button.y { left: 0; top: 32%; }
+.face-button.a { right: 0; top: 32%; }
+.face-button.b { left: 32%; bottom: 0; }
+
+.small {
+  min-width: 0;
+  min-height: 0;
+  padding: 0 8px;
+  border-radius: 8px;
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: .04em;
+}
+
+#screen {
+  display: block;
+  z-index: 0;
+  background: #000;
+  border: 2px solid rgba(255, 255, 255, .16);
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .9), 0 3px 12px rgba(0, 0, 0, .7);
+  image-rendering: pixelated;
+  touch-action: none;
+}
+
+[data-layout-id]:not(#screen) { z-index: 1; }
+
+.custom {
+  min-width: 0;
+  min-height: 0;
+  padding: 2px 7px;
+  border-radius: 9px;
+  overflow: hidden;
+  font-size: clamp(9px, 1.3vw, 13px);
+  line-height: 1.05;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#rotate {
+  display: none;
+  color: rgba(255, 255, 255, .62);
+  text-align: center;
+  padding: 24px;
+}
+
+@media (orientation: portrait) {
+  main, #hud, #fullscreen { display: none; }
+  #rotate { height: 100%; display: grid; place-items: center; }
+}
+
+@media (max-height: 420px) {
+  #hud { top: max(6px, env(safe-area-inset-top)); }
+  #fullscreen { top: max(4px, env(safe-area-inset-top)); }
+}

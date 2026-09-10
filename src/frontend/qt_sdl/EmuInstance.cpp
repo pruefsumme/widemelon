@@ -29,6 +29,7 @@
 #include <fstream>
 
 #include <QDateTime>
+#include <QMessageBox>
 
 #include <zstd.h>
 #ifdef ARCHIVE_SUPPORT_ENABLED
@@ -47,6 +48,8 @@
 #include "DSi_I2C.h"
 #include "FreeBIOS.h"
 #include "main.h"
+#include "PhoneBridge.h"
+#include "PhoneScreenDialog.h"
 
 #include "NDSCart/CartSD.h"
 
@@ -129,6 +132,9 @@ EmuInstance::EmuInstance(int inst) : deleting(false),
     audioInit();
     inputInit();
 
+    if (inst == 0)
+        phoneBridge = std::make_unique<PhoneBridgeManager>();
+
     net.RegisterInstance(instanceID);
 
     emuThread = new EmuThread(this);
@@ -140,6 +146,14 @@ EmuInstance::EmuInstance(int inst) : deleting(false),
 
     if (inst == 0) topWindow = nullptr;
     createWindow();
+
+    if (phoneBridge && WideMelon::PhoneBridgeRequestedForSession())
+    {
+        if (!phoneBridge->start())
+            QMessageBox::warning(mainWindow, "Phone bridge unavailable",
+                phoneBridge->lastError() + "\n\nWideMelon will keep showing the desktop bottom screen.");
+        WideMelon::ClearPhoneBridgeSessionRequest();
+    }
 
     emuThread->start();
 
@@ -156,6 +170,7 @@ EmuInstance::EmuInstance(int inst) : deleting(false),
 EmuInstance::~EmuInstance()
 {
     deleting = true;
+    if (phoneBridge) phoneBridge->stop();
     deleteAllWindows();
 
     emuThread->emuExit();
@@ -167,6 +182,7 @@ EmuInstance::~EmuInstance()
 
     audioDeInit();
     inputDeInit();
+    phoneBridge.reset();
 
     if (nds)
     {

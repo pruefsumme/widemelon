@@ -21,6 +21,7 @@
 
 #include <optional>
 #include <cmath>
+#include <chrono>
 
 #include <QPaintEvent>
 #include <QPainter>
@@ -32,6 +33,7 @@
 
 #include "main.h"
 #include "EmuInstance.h"
+#include "PhoneBridge.h"
 
 #include "NDS.h"
 #include "GPU.h"
@@ -150,7 +152,7 @@ void ScreenPanel::setupScreenLayout()
     int w = width();
     int h = height();
 
-    int sizing = screenSizing;
+    int sizing = effectiveScreenSizing();
     if (sizing == screenSizing_Auto) sizing = autoScreenSizing;
 
     float aspectTop, aspectBot;
@@ -190,6 +192,12 @@ void ScreenPanel::setupScreenLayout()
     calcSplashLayout();
 }
 
+int ScreenPanel::effectiveScreenSizing() const
+{
+    PhoneBridgeManager* bridge = emuInstance ? emuInstance->getPhoneBridge() : nullptr;
+    return bridge && bridge->hasUsableClient() ? screenSizing_TopOnly : screenSizing;
+}
+
 QSize ScreenPanel::screenGetMinSize(int factor = 1)
 {
     bool isHori = (screenRotation == screenRot_90Deg
@@ -199,8 +207,9 @@ QSize ScreenPanel::screenGetMinSize(int factor = 1)
     int w = 256 * factor;
     int h = 192 * factor;
 
-    if (screenSizing == screenSizing_TopOnly
-        || screenSizing == screenSizing_BotOnly)
+    const int sizing = effectiveScreenSizing();
+    if (sizing == screenSizing_TopOnly
+        || sizing == screenSizing_BotOnly)
     {
         return QSize(w, h);
     }
@@ -980,6 +989,30 @@ void ScreenPanelGL::initOpenGL()
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA, 256, 192, 2, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
 
+    glGenTextures(1, &phoneCaptureTexture);
+    glBindTexture(GL_TEXTURE_2D, phoneCaptureTexture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 256, 192, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+    glGenFramebuffers(1, &phoneCaptureFramebuffer);
+    glGenFramebuffers(1, &phoneSourceFramebuffer);
+    glBindFramebuffer(GL_FRAMEBUFFER, phoneCaptureFramebuffer);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, phoneCaptureTexture, 0);
+    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+    glReadBuffer(GL_COLOR_ATTACHMENT0);
+    const bool phoneCaptureComplete = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+    glGenBuffers(2, phoneCapturePBO);
+    for (GLuint pbo : phoneCapturePBO)
+    {
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo);
+        glBufferData(GL_PIXEL_PACK_BUFFER, 256 * 192 * 4, nullptr, GL_STREAM_READ);
+    }
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    if (emuInstance->getPhoneBridge())
+        emuInstance->getPhoneBridge()->setCaptureAvailable(phoneCaptureComplete,
+            "OpenGL could not create the phone capture framebuffer; desktop fallback retained");
+
 
     OpenGL::CompileVertexFragmentProgram(osdShader,
                                          kScreenVS_OSD, kScreenFS_OSD,
@@ -1039,6 +1072,15 @@ void ScreenPanelGL::deinitOpenGL()
     glContext->MakeCurrent();
 
     glDeleteTextures(1, &screenTexture);
+    if (emuInstance->getPhoneBridge()) emuInstance->getPhoneBridge()->setCaptureAvailable(false);
+    glDeleteBuffers(2, phoneCapturePBO);
+    glDeleteFramebuffers(1, &phoneSourceFramebuffer);
+    glDeleteFramebuffers(1, &phoneCaptureFramebuffer);
+    glDeleteTextures(1, &phoneCaptureTexture);
+    phoneSourceFramebuffer = phoneCaptureFramebuffer = phoneCaptureTexture = 0;
+    phoneCapturePBO[0] = phoneCapturePBO[1] = 0;
+    phoneCapturePrimed = false;
+    phoneCaptureMapWarned = false;
 
     glDeleteVertexArrays(1, &screenVertexArray);
     glDeleteBuffers(1, &screenVertexBuffer);
@@ -1139,7 +1181,11 @@ void ScreenPanelGL::drawScreen()
         glUniform2f(screenShaderScreenSizeULoc, w / factor, h / factor);
 
         void* topbuf; void* bottombuf;
-        if (nds->GPU.GetFramebuffers(&topbuf, &bottombuf))
+        const bool ramFramebuffers = nds->GPU.GetFramebuffers(&topbuf, &bottombuf);
+        GLuint phoneSourceTexture = 0;
+        int phoneSourceWidth = 256;
+        int phoneSourceHeight = 192;
+        if (ramFramebuffers)
         {
             // if we're doing a regular render, use the provided framebuffers
             // otherwise, GetFramebuffers() will set up the required state
@@ -1151,6 +1197,7 @@ void ScreenPanelGL::drawScreen()
                             GL_UNSIGNED_BYTE, topbuf);
             glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, 1, 256, 192, 1, GL_BGRA,
                             GL_UNSIGNED_BYTE, bottombuf);
+            phoneSourceTexture = screenTexture;
         }
         else
         {
@@ -1158,7 +1205,13 @@ void ScreenPanelGL::drawScreen()
 
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D_ARRAY, texid);
+            phoneSourceTexture = texid;
+            const int renderScale = std::clamp(mainWindow->getEmuInstance()->getGlobalConfig().GetInt("3D.GL.ScaleFactor"), 1, 8);
+            phoneSourceWidth = WideMelon::Width() * renderScale;
+            phoneSourceHeight = 192 * renderScale;
         }
+
+        capturePhoneFrame(phoneSourceTexture, phoneSourceWidth, phoneSourceHeight);
 
         screenSettingsLock.lock();
 
@@ -1268,6 +1321,91 @@ void ScreenPanelGL::drawScreen()
     }
 
     glContext->SwapBuffers();
+}
+
+void ScreenPanelGL::capturePhoneFrame(GLuint sourceTexture, int sourceWidth, int sourceHeight)
+{
+    PhoneBridgeManager* bridge = emuInstance->getPhoneBridge();
+    if (!bridge || !bridge->hasUsableClient() || bridge->testPatternEnabled()
+        || mainWindow->getWindowID() != 0 || sourceTexture == 0) return;
+
+    const qint64 now = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+    if (phoneLastCaptureNs != 0 && now - phoneLastCaptureNs < 33333333) return;
+    phoneLastCaptureNs = now;
+
+    GLint oldReadFramebuffer = 0, oldDrawFramebuffer = 0;
+    GLint oldReadBuffer = 0, oldDrawBuffer = 0, oldPackBuffer = 0, oldPackAlignment = 0;
+    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &oldReadFramebuffer);
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &oldDrawFramebuffer);
+    glGetIntegerv(GL_READ_BUFFER, &oldReadBuffer);
+    glGetIntegerv(GL_DRAW_BUFFER, &oldDrawBuffer);
+    glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &oldPackBuffer);
+    glGetIntegerv(GL_PACK_ALIGNMENT, &oldPackAlignment);
+
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, phoneSourceFramebuffer);
+    glFramebufferTextureLayer(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, sourceTexture, 0, 1);
+    glReadBuffer(GL_COLOR_ATTACHMENT0);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, phoneCaptureFramebuffer);
+    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+
+    const int scale = std::max(1, sourceHeight / 192);
+    const int nativeWidth = std::min(sourceWidth, 256 * scale);
+    const int sourceX = std::max(0, (sourceWidth - nativeWidth) / 2);
+    // The final-pass texture is already vertically arranged for OpenGL
+    // readback. Reversing the destination here would double-flip it when the
+    // PBO bytes are interpreted as a top-down QImage.
+    glBlitFramebuffer(sourceX, 0, sourceX + nativeWidth, sourceHeight,
+                      0, 0, 256, 192, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+
+    QImage frame(256, 192, QImage::Format_RGB32);
+    bool haveFrame = false;
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, phoneCaptureFramebuffer);
+    glReadBuffer(GL_COLOR_ATTACHMENT0);
+    glPixelStorei(GL_PACK_ALIGNMENT, 4);
+
+    if (bridge->settings().synchronousCapture)
+    {
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+        glReadPixels(0, 0, 256, 192, GL_BGRA, GL_UNSIGNED_BYTE, frame.bits());
+        haveFrame = true;
+    }
+    else
+    {
+        const int writeIndex = phoneCapturePBOIndex;
+        const int readIndex = writeIndex ^ 1;
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, phoneCapturePBO[writeIndex]);
+        glBufferData(GL_PIXEL_PACK_BUFFER, 256 * 192 * 4, nullptr, GL_STREAM_READ);
+        glReadPixels(0, 0, 256, 192, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+        if (phoneCapturePrimed)
+        {
+            glBindBuffer(GL_PIXEL_PACK_BUFFER, phoneCapturePBO[readIndex]);
+            void* data = glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, 256 * 192 * 4, GL_MAP_READ_BIT);
+            if (data)
+            {
+                memcpy(frame.bits(), data, 256 * 192 * 4);
+                glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+                haveFrame = true;
+                phoneCaptureMapWarned = false;
+            }
+            else if (!phoneCaptureMapWarned)
+            {
+                bridge->reportCaptureDrop("Asynchronous PBO mapping failed; frame dropped (try synchronous diagnostic capture)");
+                phoneCaptureMapWarned = true;
+            }
+        }
+        phoneCapturePrimed = true;
+        phoneCapturePBOIndex ^= 1;
+    }
+
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, oldPackBuffer);
+    glPixelStorei(GL_PACK_ALIGNMENT, oldPackAlignment);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, oldReadFramebuffer);
+    glReadBuffer(oldReadBuffer);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, oldDrawFramebuffer);
+    glDrawBuffer(oldDrawBuffer);
+
+    if (haveFrame) bridge->submitFrame(frame);
 }
 
 qreal ScreenPanelGL::devicePixelRatioFromScreen() const

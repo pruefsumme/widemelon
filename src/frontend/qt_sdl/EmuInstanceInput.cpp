@@ -24,6 +24,7 @@
 #include "SDL_sensor.h"
 #include "main.h"
 #include "Config.h"
+#include "PhoneBridge.h"
 
 using namespace melonDS;
 
@@ -443,7 +444,8 @@ void EmuInstance::inputProcess()
                 joyInputMask &= ~(1 << i);
     }
 
-    inputMask = keyInputMask & joyInputMask;
+    const u32 phoneInputMask = phoneBridge ? phoneBridge->remoteKeyMask() : 0xFFF;
+    inputMask = keyInputMask & joyInputMask & phoneInputMask;
 
     joyHotkeyMask = 0;
     if (joystick)
@@ -453,7 +455,8 @@ void EmuInstance::inputProcess()
                 joyHotkeyMask |= (1 << i);
     }
 
-    hotkeyMask = keyHotkeyMask | joyHotkeyMask;
+    const u32 phoneHotkeyMask = phoneBridge ? phoneBridge->remoteHotkeyMask() : 0;
+    hotkeyMask = keyHotkeyMask | joyHotkeyMask | phoneHotkeyMask;
     hotkeyPress = hotkeyMask & ~lastHotkeyMask;
     hotkeyRelease = lastHotkeyMask & ~hotkeyMask;
     lastHotkeyMask = hotkeyMask;

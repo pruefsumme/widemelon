@@ -142,6 +142,7 @@ private slots:
     void onOpenInputConfig();
     void onInputConfigFinished(int res);
     void onOpenWideMelonSettings();
+    void onOpenPhoneScreenSettings();
     void onOpenVideoSettings();
     void onOpenCameraSettings();
     void onCameraSettingsFinished(int res);
@@ -268,6 +269,7 @@ public:
 #endif
     QAction* actInputConfig;
     QAction* actWideMelonSettings;
+    QAction* actPhoneScreenSettings;
     QAction* actVideoSettings;
     QAction* actCameraSettings;
     QAction* actAudioSettings;

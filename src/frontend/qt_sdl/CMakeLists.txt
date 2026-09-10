@@ -59,6 +59,16 @@ set(SOURCES_QT_SDL
     CLI.cpp
     WideMelonSetup.h
     WideMelonSetup.cpp
+    PhoneBridge.h
+    PhoneBridge.cpp
+    PhoneLayout.h
+    PhoneLayout.cpp
+    PhoneLayoutDialog.h
+    PhoneLayoutDialog.cpp
+    PhoneProtocol.h
+    PhoneScreenDialog.h
+    PhoneScreenDialog.cpp
+    phone/phone.qrc
 
     LANDialog.cpp
     NetplayDialog.cpp
@@ -67,11 +77,11 @@ set(SOURCES_QT_SDL
 option(USE_QT6 "Use Qt 6 instead of Qt 5" ON)
 
 if (USE_QT6)
-    find_package(Qt6 COMPONENTS Core Gui Widgets Network Multimedia OpenGL OpenGLWidgets Svg REQUIRED)
-    set(QT_LINK_LIBS Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network Qt6::Multimedia Qt6::OpenGL Qt6::OpenGLWidgets)
+    find_package(Qt6 COMPONENTS Core Gui Widgets Network WebSockets Multimedia OpenGL OpenGLWidgets Svg REQUIRED)
+    set(QT_LINK_LIBS Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network Qt6::WebSockets Qt6::Multimedia Qt6::OpenGL Qt6::OpenGLWidgets)
 else()
-    find_package(Qt5 COMPONENTS Core Gui Widgets Network Multimedia Svg REQUIRED)
-    set(QT_LINK_LIBS Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Network Qt5::Multimedia)
+    find_package(Qt5 COMPONENTS Core Gui Widgets Network WebSockets Multimedia Svg REQUIRED)
+    set(QT_LINK_LIBS Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Network Qt5::WebSockets Qt5::Multimedia)
 endif()
 
 set(CMAKE_AUTOMOC ON)
