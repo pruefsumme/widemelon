@@ -46,8 +46,21 @@ if(BUILD_TESTING)
         ../src/frontend/qt_sdl/phone/phone.qrc)
     set_target_properties(phone_bridge_test PROPERTIES AUTOMOC ON AUTORCC ON)
     target_include_directories(phone_bridge_test PRIVATE ../src ../src/net ../src/frontend ../src/frontend/qt_sdl)
+    # PhoneLayout uses the frontend's hotkey definitions through EmuInstance.h,
+    # which includes SDL headers. They need an explicit path outside /usr/include.
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(SDL2 REQUIRED IMPORTED_TARGET sdl2)
+    include(../cmake/FixInterfaceIncludes.cmake)
+    fix_interface_includes(PkgConfig::SDL2)
+    target_include_directories(phone_bridge_test PRIVATE
+        $<TARGET_PROPERTY:PkgConfig::SDL2,INTERFACE_INCLUDE_DIRECTORIES>)
     target_link_libraries(phone_bridge_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets
         Qt${QT_VERSION_MAJOR}::Concurrent Qt${QT_VERSION_MAJOR}::Network Qt${QT_VERSION_MAJOR}::WebSockets)
+    get_target_property(QT_GUI_LIBRARY_TYPE Qt${QT_VERSION_MAJOR}::Gui TYPE)
+    if(QT_GUI_LIBRARY_TYPE STREQUAL "STATIC_LIBRARY")
+        qt_import_plugins(phone_protocol_test INCLUDE Qt::QJpegPlugin)
+        qt_import_plugins(phone_bridge_test INCLUDE Qt::QJpegPlugin Qt::QOffscreenIntegrationPlugin)
+    endif()
     add_test(NAME phone_bridge COMMAND phone_bridge_test)
     set_tests_properties(phone_bridge PROPERTIES TIMEOUT 20 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
