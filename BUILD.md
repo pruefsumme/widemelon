@@ -92,6 +92,122 @@ uses loopback. To exercise the production listener on a real private adapter,
 run it with `WIDEMELON_PHONE_TEST_ADDRESS` set to the host's active IPv4 address;
 the same HTTP, WebSocket, subnet, and pairing checks then run over that address.
 
+## Phone screen and controller
+
+The phone bridge is frontend-only and starts only after an explicit action. It
+serves the native `256 × 192` bottom screen as JPEG at up to 30 FPS and accepts
+touch and button input over the same TCP port. The desktop keeps its bottom
+screen while the phone is disconnected or a capture fails.
+
+The browser must authenticate with the session-only QR secret or manual pairing
+code and must connect from the selected local subnet. Unauthenticated clients
+receive neither layout nor screen frames and cannot submit controls. Credentials
+are regenerated whenever the bridge starts or pairing is revoked.
+
+The controller layout editor supports moving and resizing controls, undo and
+redo, custom emulator-action buttons, D-pad or analog-stick input, and optional
+status, FPS, and frame text.
+
+The bridge is intended for a trusted private LAN. Pairing prevents ordinary
+devices from connecting, but the connection is not encrypted. Do not expose the
+port to the internet or use it on public, guest, school, or workplace networks.
+The bridge does not stream audio.
+
+### Firewall and network troubleshooting
+
+The webpage and controls share the displayed TCP port, which may need to be
+allowed by the host firewall. The **Firewall setup guide…** stays open while
+the bridge runs. On Linux it detects common firewall tools and provides
+commands for firewalld, UFW, or general system guidance. Generated rules are
+limited to the selected private IPv4 address, subnet, interface, and port.
+WideMelon never runs administrator commands or changes firewall rules itself.
+
+Automatic firewalld checks only detect installation because even read-only
+queries can trigger PolicyKit. UFW checks use unprivileged status or boot
+configuration and report an unknown result when access is unavailable.
+Windows and macOS receive native system-settings guidance; the macOS check is
+read-only and never changes firewall settings. If the phone already connects,
+no new rule is needed. Revisit a generated rule if the network, address, or
+port changes.
+
+If the page does not open, check the following:
+
+- Do not select a loopback address such as `127.0.0.1`; it is reachable only by
+  the computer running WideMelon.
+- Prefer the private LAN address on the physical Wi-Fi or Ethernet interface;
+  VPNs, container bridges, and other virtual adapters may not be reachable from
+  the phone.
+- Put both devices on the same non-guest network and subnet. Wi-Fi client
+  isolation can block them even when both devices have internet access.
+- Check the advanced bridge log. `Served /` means the phone reached the HTTP
+  server; a subnet rejection identifies a network mismatch.
+- If no private address is available, join the same Wi-Fi network on both
+  devices or create a hotspot. WideMelon does not change system network
+  settings.
+
+Browser screen wake-lock support normally requires HTTPS, so the phone's
+  auto-lock setting may need to be adjusted during a session.
+
+## Technical overview
+
+A Nintendo DS screen is normally 256 × 192 pixels. WideMelon creates a wider 3D
+target and adjusts the projection to reveal extra geometry on both sides:
+
+```text
+normal:     [       256 pixels       ]
+widescreen: [ extra ][ 256 native ][ extra ]
+```
+
+The original view keeps its scale and center. Native 2D layers are placed over
+the middle 256 pixels, so the interface and touchscreen are not widened.
+
+The viewport width is fixed when the process starts. This keeps CPU geometry,
+OpenGL buffers, shaders, and compositing on the same dimensions, which is why
+profile changes require a restart.
+
+The phone bridge crops the centered physical bottom layer from the OpenGL
+output, downsamples it to native resolution, and uses a bounded asynchronous
+readback and encoder pipeline. Acknowledgements drop old frames instead of
+accumulating latency. A one-second heartbeat releases every remote button and
+touch and restores the desktop fallback after a failed connection.
+
+## Browser tests and diagnostics
+
+An optional browser smoke test uses installed Chromium and Node.js 22 or newer.
+It checks simultaneous button holds and continuous touch through the production
+bridge while streaming a generated test pattern; no ROM is needed:
+
+```sh
+node tests/phone_browser_smoke.js build/tests/phone_bridge_test /usr/bin/chromium
+```
+
+Add `--benchmark --dialog` to measure sustained streaming during idle,
+continuous touch, and simultaneous button holds with the settings dialog open.
+The test reports per-stage FPS and decode/delivery timing and fails below 28.5
+displayed FPS. Enable it explicitly with
+`-DWIDEMELON_ENABLE_STREAM_BENCHMARK=ON` so ordinary builds do not depend on
+local browser DevTools configuration.
+
+For a browser-only A/B comparison, set `WIDEMELON_BENCH_REVISION` to a commit
+hash; the test substitutes that revision's browser script while keeping the
+same bridge. `WIDEMELON_BENCH_QUALITY=100` and `WIDEMELON_BENCH_CPU=8` select
+JPEG quality and Chromium CPU throttling. Synthetic and loopback measurements
+do not prove Wi-Fi performance or gameplay GPU capture performance.
+
+The phone configurator also provides a generated test pattern, live bridge
+logs, frame/encode/drop/RTT metrics, optional rotating file logs, synchronous
+GPU readback for driver diagnosis, and a sanitized JSON diagnostics export.
+The export retains up to 60 recent timing samples, including capture, encode,
+send, acknowledgement, decode, input, GUI timer, and queued-socket metrics.
+Export during or immediately after an FPS drop, before restarting the bridge.
+
+These environment overrides change diagnostics only and never start the network
+listener:
+
+```sh
+WIDEMELON_PHONE_LOG_LEVEL=debug WIDEMELON_PHONE_LOG_FILE=1 ./widemelon
+```
+
 ## Release packaging
 
 `.github/workflows/release.yml` builds all four artifacts, runs tests, packages
@@ -137,3 +253,36 @@ generated build directories to a release.
 Automated tests cannot prove gameplay, GPU output, or behavior on every driver.
 Before publishing, smoke-test the native setup dialog, ROM selection, 4:3 and
 expanded OpenGL profiles, and phone pairing with a locally available game.
+
+## Development
+
+WideMelon is maintained as a GitHub fork of melonDS. The complete modified
+emulator source is checked in under `src/`; there is no patch-generation step or
+nested source checkout.
+
+Run the complete build and test workflow before committing engine, shader, Qt,
+dependency, or packaging changes:
+
+```sh
+./scripts/build.sh
+```
+
+Automated or headless runs can supply a profile through environment variables:
+
+```sh
+WIDEMELON_VIEW_WIDTH=448 WIDEMELON_SCALE=4 \
+  ./build/widemelon /path/to/game.nds
+```
+
+The supported overrides and ranges are documented in the source configuration:
+
+- `WIDEMELON_VIEW_WIDTH`: even values from `256` through `768`.
+- `WIDEMELON_SCALE`: values from `1` through `8`.
+- `WIDEMELON_WINDOW_WIDTH`: `640` through `7680`.
+- `WIDEMELON_WINDOW_HEIGHT`: `480` through `4320`.
+- `WIDEMELON_INTEGER`: boolean-like integer setting.
+
+To compare against upstream melonDS, add
+`https://github.com/melonDS-emu/melonDS.git` as an `upstream` remote and merge
+selected commits on a dedicated update branch. Upstream updates are explicit;
+run the full renderer, frontend, and packaging checks after merging them.
