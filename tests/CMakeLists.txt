@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.16)
 project(WideMelonTests VERSION 0.2.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+option(WIDEMELON_ENABLE_STREAM_BENCHMARK
+    "Build the optional Chromium streaming benchmark (requires a working DevTools browser)" OFF)
 
 include(CTest)
 if(BUILD_TESTING)
@@ -65,7 +67,8 @@ if(BUILD_TESTING)
         message(STATUS "Node.js 18+ not found; phone browser regression test is unavailable")
     endif()
     find_program(CHROMIUM_EXECUTABLE NAMES chromium chromium-browser)
-    if(CHROMIUM_EXECUTABLE AND NODE_EXECUTABLE AND NODE_VERSION VERSION_GREATER_EQUAL 22)
+    if(WIDEMELON_ENABLE_STREAM_BENCHMARK AND CHROMIUM_EXECUTABLE
+        AND NODE_EXECUTABLE AND NODE_VERSION VERSION_GREATER_EQUAL 22)
         add_test(NAME phone_stream_pacing COMMAND ${NODE_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/phone_browser_smoke.js $<TARGET_FILE:phone_bridge_test>
             ${CHROMIUM_EXECUTABLE} --benchmark --dialog)

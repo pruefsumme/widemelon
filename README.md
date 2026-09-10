@@ -149,7 +149,8 @@ node tests/phone_browser_smoke.js build/tests/phone_bridge_test /usr/bin/chromiu
 Add `--benchmark --dialog` to measure sustained streaming during idle, continuous
 touch, and simultaneous button holds, with the settings dialog open. The test
 reports per-stage FPS and decode/delivery timing and fails below 28.5 displayed
-FPS. CTest includes this benchmark when Chromium and Node.js 22+ are installed.
+FPS. Enable it explicitly with `-DWIDEMELON_ENABLE_STREAM_BENCHMARK=ON`; this
+keeps ordinary builds independent of local browser DevTools configuration.
 For a browser-only A/B comparison, set `WIDEMELON_BENCH_REVISION` to a commit hash;
 the test substitutes that revision's browser script while keeping the same bridge.
 `WIDEMELON_BENCH_QUALITY=100` and `WIDEMELON_BENCH_CPU=8` select JPEG quality and
