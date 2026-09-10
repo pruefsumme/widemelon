@@ -104,16 +104,22 @@ int main(int argc, char** argv)
     auto auth = [&](QWebSocket& socket, const QString& code) {
         send(socket, {{"v", 2}, {"type", "auth"}, {"credential", code}});
     };
-    auto http = [&](const QByteArray& path) {
+    auto http = [&](const QByteArray& path, bool head = false) {
         QTcpSocket socket;
         socket.connectToHost(QHostAddress::LocalHost, port);
         if (!waitUntil([&] { return socket.state() == QAbstractSocket::ConnectedState; })) return QByteArray();
-        socket.write("GET " + path + " HTTP/1.1\r\nHost: " + host + "\r\n\r\n");
+        socket.write((head ? "HEAD " : "GET ") + path + " HTTP/1.1\r\nHost: " + host + "\r\n\r\n");
         waitUntil([&] { return socket.state() == QAbstractSocket::UnconnectedState; });
         return socket.readAll();
     };
     CHECK(http("/").startsWith("HTTP/1.1 200"));
     CHECK(http("/layout.json").startsWith("HTTP/1.1 404"));
+    for (const QByteArray& path : {QByteArray("/"), QByteArray("/missing")})
+    {
+        const QByteArray reply = http(path, true);
+        CHECK(reply.indexOf("\r\n\r\n") == reply.size() - 4);
+        CHECK(reply.contains("Content-Length: ") && !reply.contains("Content-Length: 0\r\n"));
+    }
 
     QImage frame(256, 192, QImage::Format_RGB32);
     frame.fill(Qt::red);

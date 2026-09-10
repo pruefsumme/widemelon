@@ -632,28 +632,20 @@ void PhoneBridgeManager::routeTcpSocket(QTcpSocket* socket)
         webSocketServer->handleConnection(socket);
         return;
     }
-    serveHttpSocket(socket, data, data.indexOf("\r\n\r\n"));
+    serveHttpSocket(socket, request.path, request.kind == PhoneProtocol::HttpRequestKind::Head);
 }
 
-void PhoneBridgeManager::serveHttpSocket(QTcpSocket* socket, const QByteArray& data, int headerEnd)
+void PhoneBridgeManager::serveHttpSocket(QTcpSocket* socket, const QByteArray& path, bool head)
 {
     socket->readAll();
-    const QList<QByteArray> request = data.left(headerEnd).split('\n').value(0).trimmed().split(' ');
-    const bool head = request.value(0) == "HEAD";
-    if (!head && request.value(0) != "GET")
-    {
-        socket->write(httpReply(405, "Method Not Allowed", "text/plain", "Only GET and HEAD are supported\n"));
-        socket->disconnectFromHost();
-        return;
-    }
     QByteArray body, type;
-    const QByteArray path = request[1];
     if (path == "/" || path == "/index.html") { body = resource(":/phone/index.html"); type = "text/html; charset=utf-8"; }
     else if (path == "/app.js") { body = resource(":/phone/app.js"); type = "text/javascript; charset=utf-8"; }
     else if (path == "/app.css") { body = resource(":/phone/app.css"); type = "text/css; charset=utf-8"; }
     else
     {
-        socket->write(httpReply(404, "Not Found", "text/plain", "Not found\n"));
+        const QByteArray errorBody = "Not found\n";
+        socket->write(httpReply(404, "Not Found", "text/plain", head ? QByteArray() : errorBody, {}, errorBody.size()));
         socket->disconnectFromHost();
         return;
     }

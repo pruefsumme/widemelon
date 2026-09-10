@@ -128,7 +128,7 @@ private:
     void setConnected(bool value);
     void handleTcpSocket(class QTcpSocket* socket);
     void routeTcpSocket(class QTcpSocket* socket);
-    void serveHttpSocket(class QTcpSocket* socket, const QByteArray& data, int headerEnd);
+    void serveHttpSocket(class QTcpSocket* socket, const QByteArray& path, bool head);
     void handlePendingMessage(QWebSocket* socket, const QString& message);
     void authenticateClient(QWebSocket* socket);
     void closePendingClient(QWebSocket* socket, QWebSocketProtocol::CloseCode code, const QString& reason);
