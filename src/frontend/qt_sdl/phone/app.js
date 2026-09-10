@@ -26,6 +26,8 @@
   let authenticated = false;
   let reconnectTimer = null;
   let inputTimer = null;
+  let lastInputSentAt = -Infinity;
+  let touchPointerId = null;
   let pendingFrame = null;
   let decoding = false;
 
@@ -43,19 +45,24 @@
   }
 
   function sendInputNow() {
-    if (authenticated) send('input', {seq: ++inputSequence, buttons, hotkeys, touch});
+    clearTimeout(inputTimer);
+    inputTimer = null;
+    if (authenticated) {
+      lastInputSentAt = performance.now();
+      send('input', {seq: ++inputSequence, buttons, hotkeys, touch});
+    }
   }
 
   function sendInput() {
-    // Touch and directional pointer events can exceed the server's rate limit
-    // on high-refresh phones. Coalesce snapshots, keeping releases immediate.
-    if (inputTimer === null) inputTimer = setTimeout(() => {
-      inputTimer = null;
-      sendInputNow();
-    }, 16);
+    // Send normal 60/120 Hz movement immediately. Faster event bursts keep
+    // only the newest position, with at most 8 ms of added scheduling delay.
+    // Button and touch transitions bypass this motion-only rate limit.
+    const delay = 8 - (performance.now() - lastInputSentAt);
+    if (delay <= 0) sendInputNow();
+    else if (inputTimer === null) inputTimer = setTimeout(sendInputNow, delay);
   }
 
-  function recalculateButtons() {
+  function recalculateButtons(immediate = false) {
     let value = 0;
     let hotkeyValue = 0;
     for (const pointer of pointers.values()) {
@@ -70,7 +77,8 @@
         : (hotkeys & (1 << Number(el.dataset.hotkey))) !== 0;
       el.classList.toggle('active', active);
     });
-    sendInput();
+    if (immediate) sendInputNow();
+    else sendInput();
   }
 
   function bindButton(button) {
@@ -80,13 +88,16 @@
       event.preventDefault();
       button.setPointerCapture(event.pointerId);
       pointers.set(event.pointerId, {
+        element: button,
         bits: button.dataset.button === undefined ? 0 : 1 << Number(button.dataset.button),
         hotkeys: button.dataset.hotkey === undefined ? 0 : 1 << Number(button.dataset.hotkey)
       });
-      recalculateButtons();
+      recalculateButtons(true);
     });
     const release = event => {
-      if (pointers.delete(event.pointerId)) recalculateButtons();
+      if (pointers.get(event.pointerId)?.element !== button) return;
+      pointers.delete(event.pointerId);
+      recalculateButtons(true);
     };
     button.addEventListener('pointerup', release);
     button.addEventListener('pointercancel', release);
@@ -172,20 +183,25 @@
   dpad.addEventListener('pointerdown', event => {
     event.preventDefault();
     dpad.setPointerCapture(event.pointerId);
-    pointers.set(event.pointerId, {bits: dpadBits(event), dpad: true});
+    pointers.set(event.pointerId, {bits: dpadBits(event), element: dpad});
     updateDirectionalVisual(event);
     dpad.classList.add('active');
-    recalculateButtons();
+    recalculateButtons(true);
   });
   dpad.addEventListener('pointermove', event => {
     const value = pointers.get(event.pointerId);
-    if (!value || !value.dpad) return;
-    value.bits = dpadBits(event);
+    if (!value || value.element !== dpad) return;
     updateDirectionalVisual(event);
+    const bits = dpadBits(event);
+    if (value.bits === bits) return;
+    value.bits = bits;
     recalculateButtons();
   });
   const releaseDpad = event => {
-    if (pointers.delete(event.pointerId)) recalculateButtons();
+    if (pointers.get(event.pointerId)?.element !== dpad) return;
+    pointers.delete(event.pointerId);
+    recalculateButtons(true);
+    if ([...pointers.values()].some(pointer => pointer.element === dpad)) return;
     dpad.classList.remove('active');
     dpad.style.setProperty('--stick-x', '0px');
     dpad.style.setProperty('--stick-y', '0px');
@@ -194,26 +210,32 @@
   dpad.addEventListener('pointercancel', releaseDpad);
   dpad.addEventListener('lostpointercapture', releaseDpad);
 
-  function updateTouch(event, active) {
+  function updateTouch(event, active, immediate = false) {
     const rect = canvas.getBoundingClientRect();
     const x = Math.floor((event.clientX - rect.left) * 256 / rect.width);
     const y = Math.floor((event.clientY - rect.top) * 192 / rect.height);
     touch = {active, x: Math.max(0, Math.min(255, x)), y: Math.max(0, Math.min(191, y))};
-    sendInput();
+    if (immediate) sendInputNow();
+    else sendInput();
   }
   canvas.addEventListener('pointerdown', event => {
     event.preventDefault();
+    // A DS has one stylus. Another finger must not move or release the active
+    // stroke, including when the first finger is holding a virtual button.
+    if (touchPointerId !== null) return;
+    touchPointerId = event.pointerId;
     canvas.setPointerCapture(event.pointerId);
-    pointers.set(event.pointerId, {touch: true});
-    updateTouch(event, true);
+    updateTouch(event, true, true);
   });
   canvas.addEventListener('pointermove', event => {
-    if (pointers.get(event.pointerId)?.touch) updateTouch(event, true);
+    if (event.pointerId !== touchPointerId) return;
+    const samples = event.getCoalescedEvents?.();
+    updateTouch(samples?.length ? samples[samples.length - 1] : event, true);
   });
   const releaseTouch = event => {
-    if (!pointers.get(event.pointerId)?.touch) return;
-    pointers.delete(event.pointerId);
-    updateTouch(event, false);
+    if (event.pointerId !== touchPointerId) return;
+    touchPointerId = null;
+    updateTouch(event, false, true);
   };
   canvas.addEventListener('pointerup', releaseTouch);
   canvas.addEventListener('pointercancel', releaseTouch);
@@ -224,13 +246,11 @@
     buttons = 0;
     hotkeys = 0;
     touch = {active: false, x: 0, y: 0};
-    recalculateButtons();
-    clearTimeout(inputTimer);
-    inputTimer = null;
+    touchPointerId = null;
+    recalculateButtons(true);
     dpad.classList.remove('active');
     dpad.style.setProperty('--stick-x', '0px');
     dpad.style.setProperty('--stick-y', '0px');
-    sendInputNow();
     send('visibility', {hidden: true});
   }
 

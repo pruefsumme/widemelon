@@ -18,6 +18,7 @@
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QThread>
+#include <QTimer>
 #include <QWebSocket>
 #include <functional>
 #include <iostream>
@@ -70,6 +71,24 @@ int main(int argc, char** argv)
     bridge.setSettings(settings);
     bridge.setCaptureAvailable(true);
     CHECK(bridge.start());
+    if (application.arguments().contains("--browser-smoke"))
+    {
+        // Optional real-browser harness: loopback only, no emulator or ROM.
+        // Report the exact snapshots consumed by the emulator input path.
+        std::cout << QJsonDocument(QJsonObject{{"url", bridge.pairingUrl()}})
+            .toJson(QJsonDocument::Compact).constData() << std::endl;
+        QTimer observer;
+        QObject::connect(&observer, &QTimer::timeout, [&] {
+            const QJsonObject state{{"connected", bridge.isConnected()},
+                {"keys", int(bridge.remoteKeyMask())}, {"touch", double(bridge.remoteTouchSnapshot())},
+                {"framesAcked", double(bridge.metrics().framesAcked)}};
+            std::cout << QJsonDocument(state).toJson(QJsonDocument::Compact).constData() << std::endl;
+        });
+        observer.start(10);
+        bridge.setTestPattern(true);
+        QTimer::singleShot(30000, &application, &QCoreApplication::quit);
+        return application.exec();
+    }
     const QString originalCode = bridge.pairingCode();
     const QString originalUrl = bridge.pairingUrl();
     PhoneScreenDialog dialog(&bridge, false);
@@ -194,10 +213,34 @@ int main(int argc, char** argv)
     CHECK(waitUntil([&] { return bridge.remoteKeyMask() == 0xFFE; }));
     CHECK(bridge.remoteHotkeyMask() == 16 && bridge.remoteTouchSnapshot() != 0);
 
+    // Complete button snapshots preserve simultaneous holds and independent
+    // releases across WebSocket parsing and the emulator's active-low mask.
+    int inputSequence = 2;
+    for (int buttons : {0x400, 0x401, 0x400, 0x401, 0x001, 0x000})
+    {
+        auto snapshot = input(inputSequence++);
+        snapshot["buttons"] = buttons;
+        send(first, snapshot);
+        CHECK(waitUntil([&] { return bridge.remoteKeyMask() == (0xFFFU ^ melonDS::u32(buttons)); }));
+    }
+    const auto framesBeforeStroke = bridge.metrics().framesSent;
+    for (int position = 0; position < 64; position++)
+    {
+        auto snapshot = input(inputSequence++);
+        snapshot["buttons"] = 0x401;
+        snapshot["touch"] = QJsonObject{{"active", true}, {"x", position * 4}, {"y", position * 3}};
+        send(first, snapshot);
+        const melonDS::u32 expectedTouch = 0x80000000U | melonDS::u32(position * 4)
+            | (melonDS::u32(position * 3) << 8);
+        CHECK(waitUntil([&] { return bridge.remoteTouchSnapshot() == expectedTouch; }));
+        CHECK(bridge.remoteKeyMask() == (0xFFFU ^ 0x401U));
+    }
+    CHECK(bridge.isConnected() && bridge.metrics().framesSent == framesBeforeStroke);
+
     // Protocol rejection must end authorization immediately, before the peer
     // completes its close handshake. Later buffered input must be ignored.
     first.sendTextMessage("invalid json");
-    send(first, input(2));
+    send(first, input(inputSequence));
     CHECK(waitUntil([&] { return !bridge.isConnected(); }));
     CHECK(released(bridge) && !bridge.hasUsableClient());
     CHECK(bridge.connectedClientLabel().isEmpty());

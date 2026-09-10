@@ -126,6 +126,14 @@ tests with Qt 5.15. Install Node.js 18 or newer to run the browser regression
 tests as well. CI covers both Qt versions, including the production bridge's
 loopback transport and the native pairing dialog with Qt's offscreen platform.
 
+An optional real-browser input smoke test uses installed Chromium and Node.js
+22 or newer. It checks simultaneous button holds and continuous touch through
+the production bridge while streaming a generated test pattern; no ROM is needed:
+
+```sh
+node tests/phone_browser_smoke.js build/tests/phone_bridge_test /usr/bin/chromium
+```
+
 ## Technical overview
 
 A Nintendo DS screen is normally 256 × 192 pixels. WideMelon creates a wider
