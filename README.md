@@ -172,7 +172,15 @@ trust.
 The phone configurator includes a generated test pattern, live bridge logs,
 frame/encode/drop/RTT metrics, optional rotating file logs, synchronous GPU
 readback for driver diagnosis, and a sanitized JSON diagnostics export. The
-following environment overrides change diagnostics only and never start the
+export retains up to 60 recent timing samples: capture/encode/send/ACK rates,
+GPU capture time, encoder-to-GUI delivery delay, frame acknowledgement time,
+phone decode time, input rate, GUI timer delay, and queued socket bytes. Export
+during or immediately after an FPS drop, before restarting the bridge. Frame
+acknowledgement time includes transport and phone processing; it is distinct
+from the existing heartbeat RTT. Timing collection does not change the frame
+cap, acknowledgement policy, or latest-frame replacement.
+
+The following environment overrides change diagnostics only and never start the
 network listener:
 
 ```sh

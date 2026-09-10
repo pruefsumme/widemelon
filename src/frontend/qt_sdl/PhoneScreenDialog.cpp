@@ -416,7 +416,12 @@ void PhoneScreenDialog::updateUi()
                          .arg(m.framesOffered).arg(m.framesEncoded).arg(m.framesSent)
                          .arg(m.framesAcked).arg(m.framesDropped).arg(m.lastFrameBytes)
                          .arg(m.averageEncodeMs, 0, 'f', 2).arg(m.roundTripMs, 0, 'f', 1)
-                         .arg(m.authenticationFailures));
+                         .arg(m.authenticationFailures)
+            + QString("\nFPS: capture %1 · sent %2 · acked %3\n"
+                      "GPU %4 ms · delivery %5 ms · frame ACK %6 ms · phone decode %7 ms")
+                .arg(m.offeredFps, 0, 'f', 1).arg(m.sentFps, 0, 'f', 1).arg(m.ackedFps, 0, 'f', 1)
+                .arg(m.captureMs, 0, 'f', 1).arg(m.deliveryMs, 0, 'f', 1)
+                .arg(m.frameAckMs, 0, 'f', 1).arg(m.browserDecodeMs, 0, 'f', 1));
         const QString text = manager->logLines().join('\n');
         if (logs->toPlainText() != text)
         {

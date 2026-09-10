@@ -67,6 +67,11 @@ int main(int argc, char** argv)
     auto settings = bridge.settings();
     settings.address = "127.0.0.1";
     settings.basePort = port;
+    if (qEnvironmentVariableIsSet("WIDEMELON_BENCH_QUALITY"))
+    {
+        settings.jpegQuality = qEnvironmentVariableIntValue("WIDEMELON_BENCH_QUALITY");
+        CHECK(settings.jpegQuality >= 30 && settings.jpegQuality <= 100);
+    }
     settings.consoleLog = settings.fileLog = false;
     bridge.setSettings(settings);
     bridge.setCaptureAvailable(true);
@@ -77,16 +82,31 @@ int main(int argc, char** argv)
         // Report the exact snapshots consumed by the emulator input path.
         std::cout << QJsonDocument(QJsonObject{{"url", bridge.pairingUrl()}})
             .toJson(QJsonDocument::Compact).constData() << std::endl;
+        std::unique_ptr<PhoneScreenDialog> benchmarkDialog;
+        if (application.arguments().contains("--benchmark-dialog"))
+        {
+            benchmarkDialog = std::make_unique<PhoneScreenDialog>(&bridge, false);
+            benchmarkDialog->show();
+        }
         QTimer observer;
+        QElapsedTimer eventClock;
+        eventClock.start();
+        qint64 lastObserver = 0;
         QObject::connect(&observer, &QTimer::timeout, [&] {
+            const auto metrics = bridge.metrics();
+            const qint64 now = eventClock.elapsed();
             const QJsonObject state{{"connected", bridge.isConnected()},
                 {"keys", int(bridge.remoteKeyMask())}, {"touch", double(bridge.remoteTouchSnapshot())},
-                {"framesAcked", double(bridge.metrics().framesAcked)}};
+                {"framesAcked", double(metrics.framesAcked)}, {"framesOffered", double(metrics.framesOffered)},
+                {"framesEncoded", double(metrics.framesEncoded)}, {"framesSent", double(metrics.framesSent)},
+                {"framesDropped", double(metrics.framesDropped)}, {"encodeMs", metrics.averageEncodeMs},
+                {"guiTickMs", double(now - lastObserver)}};
+            lastObserver = now;
             std::cout << QJsonDocument(state).toJson(QJsonDocument::Compact).constData() << std::endl;
         });
         observer.start(10);
         bridge.setTestPattern(true);
-        QTimer::singleShot(30000, &application, &QCoreApplication::quit);
+        QTimer::singleShot(90000, &application, &QCoreApplication::quit);
         return application.exec();
     }
     const QString originalCode = bridge.pairingCode();
@@ -193,7 +213,7 @@ int main(int argc, char** argv)
     CHECK(waitUntil([&] { return bridge.isConnected() && firstMessages == 1
         && second.state() == QAbstractSocket::UnconnectedState; }));
     CHECK(secondMessages == 0);
-    bridge.submitFrame(frame);
+    bridge.submitFrame(frame, 2.5);
     CHECK(waitUntil([&] { return frameCount == 1; }));
     const quint32 firstSequence = receivedSequence;
     // Stall GUI delivery while the encoder produces frames. Only the newest
@@ -205,9 +225,15 @@ int main(int argc, char** argv)
     }
     CHECK(bridge.metrics().framesDropped > 0);
     CHECK(frameCount == 1);
-    send(first, {{"v", 2}, {"type", "frameAck"}, {"seq", double(firstSequence)}});
+    send(first, {{"v", 2}, {"type", "frameAck"}, {"seq", double(firstSequence)}, {"decodeMs", 7.5}});
     CHECK(waitUntil([&] { return frameCount == 2; }));
     CHECK(receivedSequence == bridge.metrics().framesOffered);
+    CHECK(bridge.metrics().maxCaptureMs == 2.5 && bridge.metrics().browserDecodeMs == 7.5);
+    CHECK(bridge.metrics().frameAckMs >= 30 && bridge.metrics().maxDeliveryMs > 0);
+    // Optional, untrusted timing data cannot block an otherwise valid ACK.
+    send(first, {{"v", 2}, {"type", "frameAck"}, {"seq", double(receivedSequence)}, {"decodeMs", 1e100}});
+    CHECK(waitUntil([&] { return bridge.metrics().framesAcked == 2; }));
+    CHECK(bridge.metrics().browserDecodeMs == 7.5);
     std::cout << "JPEG average " << bridge.metrics().averageEncodeMs << " ms; latest-frame replacement passed\n";
     send(first, input());
     CHECK(waitUntil([&] { return bridge.remoteKeyMask() == 0xFFE; }));
@@ -236,6 +262,21 @@ int main(int argc, char** argv)
         CHECK(bridge.remoteKeyMask() == (0xFFFU ^ 0x401U));
     }
     CHECK(bridge.isConnected() && bridge.metrics().framesSent == framesBeforeStroke);
+    QObject::connect(&first, &QWebSocket::textMessageReceived, [&](const QString& text) {
+        const auto message = QJsonDocument::fromJson(text.toUtf8()).object();
+        if (message.value("type").toString() == "ping")
+            send(first, {{"v", 2}, {"type", "pong"}, {"sent", message.value("sent")}});
+    });
+    CHECK(waitUntil([&] { return bridge.metrics().offeredFps > 0; }));
+    CHECK(bridge.exportDiagnostics(diagnostics.filePath("timing.json"), {}));
+    QFile timingReport(diagnostics.filePath("timing.json"));
+    CHECK(timingReport.open(QIODevice::ReadOnly));
+    const auto samples = QJsonDocument::fromJson(timingReport.readAll()).object().value("performanceSamples").toArray();
+    CHECK(!samples.isEmpty() && samples.size() <= 60);
+    const auto sample = samples.last().toObject();
+    CHECK(sample.value("maxCaptureMs").toDouble() == 2.5);
+    CHECK(sample.value("inputsPerSecond").toDouble() > 0);
+    CHECK(sample.value("sentFps").toDouble() > 0 && sample.value("ackedFps").toDouble() > 0);
 
     // Protocol rejection must end authorization immediately, before the peer
     // completes its close handshake. Later buffered input must be ignored.

@@ -4,6 +4,7 @@
 #include "PhoneBridge.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 
 #include <QBuffer>
@@ -149,7 +150,7 @@ protected:
             {
                 QMutexLocker lock(&mutex);
                 notify = !resultPending;
-                result = {generation, sequence, std::move(bytes), error};
+                result = {generation, sequence, std::move(bytes), error, std::chrono::steady_clock::now()};
                 resultPending = true;
             }
             {
@@ -176,7 +177,8 @@ protected:
                 if (!ready.error.isEmpty())
                     owner->log(Error, "encode", "JPEG encoding failed: " + ready.error);
                 else
-                    owner->encodedFrameReady(ready.generation, ready.sequence, ready.bytes);
+                    owner->encodedFrameReady(ready.generation, ready.sequence, ready.bytes,
+                        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - ready.completed).count());
             }, Qt::QueuedConnection);
         }
     }
@@ -188,6 +190,7 @@ private:
         quint32 sequence = 0;
         QByteArray bytes;
         QString error;
+        std::chrono::steady_clock::time_point completed;
     };
     Result result;
     bool resultPending = false;
@@ -373,6 +376,9 @@ bool PhoneBridgeManager::start()
     }
     generatePairingCredentials();
     heartbeatClock.start();
+    lastPerformanceSampleMs = lastHeartbeatCheckMs = maxHeartbeatDelayMs = 0;
+    performanceSamples = {};
+    sampledMetrics = metrics();
     lastHeartbeatMs = heartbeatClock.elapsed();
     controlRateWindowMs = lastHeartbeatMs;
     controlMessagesInWindow = 0;
@@ -464,7 +470,7 @@ melonDS::u32 PhoneBridgeManager::remoteKeyMask() const { return remoteKeys.load(
 melonDS::u32 PhoneBridgeManager::remoteHotkeyMask() const { return remoteHotkeys.load(); }
 melonDS::u32 PhoneBridgeManager::remoteTouchSnapshot() const { return remoteTouch.load(); }
 
-void PhoneBridgeManager::submitFrame(const QImage& image)
+void PhoneBridgeManager::submitFrame(const QImage& image, double captureMs)
 {
     if (!wantsFrames() || image.isNull()) return;
     const quint32 sequence = frameSequence.fetch_add(1) + 1;
@@ -472,6 +478,8 @@ void PhoneBridgeManager::submitFrame(const QImage& image)
     {
         QMutexLocker lock(&stateMutex);
         currentMetrics.framesOffered++;
+        currentMetrics.captureMs = captureMs;
+        currentMetrics.maxCaptureMs = std::max(currentMetrics.maxCaptureMs, captureMs);
         quality = currentSettings.jpegQuality;
     }
     if (encoder->submit(image, connectionGeneration.load(), sequence, quality))
@@ -543,6 +551,7 @@ bool PhoneBridgeManager::exportDiagnostics(const QString& path, const PhoneFirew
     root["lastEncodeMs"] = m.lastEncodeMs;
     root["averageEncodeMs"] = m.averageEncodeMs;
     root["roundTripMs"] = m.roundTripMs;
+    root["performanceSamples"] = performanceSamples;
     // The dialog supplies its asynchronous probe result. Running firewall
     // commands here would block heartbeat and frame delivery for seconds.
     root["firewallDetected"] = firewall.detected;
@@ -884,6 +893,7 @@ void PhoneBridgeManager::handleTextMessage(const QString& message)
         remoteKeys.store(keys);
         remoteHotkeys.store(hotkeys);
         remoteTouch.store(touch);
+        { QMutexLocker lock(&stateMutex); currentMetrics.inputMessages++; }
         log(Trace, "input", QString("active-low buttons=0x%1 hotkeys=0x%2 touch=%3")
             .arg(keys, 3, 16, QLatin1Char('0')).arg(hotkeys, 6, 16, QLatin1Char('0'))
             .arg(bool(touch & 0x80000000U)));
@@ -903,7 +913,21 @@ void PhoneBridgeManager::handleTextMessage(const QString& message)
         if (frameInFlight && sequence == inFlightSequence)
         {
             frameInFlight = false;
-            { QMutexLocker lock(&stateMutex); currentMetrics.framesAcked++; }
+            {
+                QMutexLocker lock(&stateMutex);
+                currentMetrics.framesAcked++;
+                currentMetrics.frameAckMs = messageTime - inFlightSentMs;
+                currentMetrics.maxFrameAckMs = std::max(currentMetrics.maxFrameAckMs, currentMetrics.frameAckMs);
+                // Optional telemetry from newer clients. Invalid telemetry is
+                // ignored; it must not affect acceptance or ACK/backpressure.
+                const auto decodeValue = object.value("decodeMs");
+                const double decodeMs = decodeValue.toDouble(-1);
+                if (decodeValue.isDouble() && decodeMs >= 0 && decodeMs <= 10000)
+                {
+                    currentMetrics.browserDecodeMs = decodeMs;
+                    currentMetrics.maxBrowserDecodeMs = std::max(currentMetrics.maxBrowserDecodeMs, decodeMs);
+                }
+            }
             sendPendingFrame();
         }
     }
@@ -937,6 +961,7 @@ void PhoneBridgeManager::handleTextMessage(const QString& message)
 
 void PhoneBridgeManager::checkHeartbeat()
 {
+    samplePerformance(heartbeatClock.elapsed());
     if (isListening() && !QHostAddress(currentSettings.address).isLoopback()
         && !availableIPv4Addresses(false).contains(currentSettings.address))
     {
@@ -949,7 +974,7 @@ void PhoneBridgeManager::checkHeartbeat()
     if (frameInFlight && now - inFlightSentMs > 500)
     {
         frameInFlight = false;
-        { QMutexLocker lock(&stateMutex); currentMetrics.framesDropped++; }
+        { QMutexLocker lock(&stateMutex); currentMetrics.framesDropped++; currentMetrics.acknowledgementTimeouts++; }
         log(Debug, "stream", "Frame acknowledgement timed out; sending latest frame");
         sendPendingFrame();
     }
@@ -965,6 +990,43 @@ void PhoneBridgeManager::checkHeartbeat()
         QJsonObject ping{{"v", PhoneProtocol::Version}, {"type", "ping"}, {"sent", double(now)}};
         client->sendTextMessage(QString::fromUtf8(QJsonDocument(ping).toJson(QJsonDocument::Compact)));
     }
+}
+
+void PhoneBridgeManager::samplePerformance(qint64 now)
+{
+    maxHeartbeatDelayMs = std::max(maxHeartbeatDelayMs, std::max<qint64>(0, now - lastHeartbeatCheckMs - 250));
+    lastHeartbeatCheckMs = now;
+    const qint64 elapsed = now - lastPerformanceSampleMs;
+    if (elapsed < 1000) return;
+    PhoneBridgeMetrics m = metrics();
+    const double seconds = elapsed / 1000.0;
+    m.offeredFps = (m.framesOffered - sampledMetrics.framesOffered) / seconds;
+    m.sentFps = (m.framesSent - sampledMetrics.framesSent) / seconds;
+    m.ackedFps = (m.framesAcked - sampledMetrics.framesAcked) / seconds;
+    {
+        QMutexLocker lock(&stateMutex);
+        currentMetrics.offeredFps = m.offeredFps;
+        currentMetrics.sentFps = m.sentFps;
+        currentMetrics.ackedFps = m.ackedFps;
+    }
+    // Bounded diagnostic history only; this does not buffer or schedule frames.
+    performanceSamples.append(QJsonObject{
+        {"timeMs", double(now)}, {"sampleMs", double(elapsed)},
+        {"offeredFps", m.offeredFps}, {"sentFps", m.sentFps}, {"ackedFps", m.ackedFps},
+        {"encodedFps", (m.framesEncoded - sampledMetrics.framesEncoded) / seconds},
+        {"inputsPerSecond", (m.inputMessages - sampledMetrics.inputMessages) / seconds},
+        {"captureMs", m.captureMs}, {"maxCaptureMs", m.maxCaptureMs}, {"encodeMs", m.lastEncodeMs},
+        {"deliveryMs", m.deliveryMs}, {"maxDeliveryMs", m.maxDeliveryMs},
+        {"frameAckMs", m.frameAckMs}, {"maxFrameAckMs", m.maxFrameAckMs},
+        {"browserDecodeMs", m.browserDecodeMs}, {"maxBrowserDecodeMs", m.maxBrowserDecodeMs},
+        {"guiDelayMs", double(maxHeartbeatDelayMs)}, {"socketQueuedBytes", double(client ? client->bytesToWrite() : 0)},
+        {"acknowledgementTimeouts", double(m.acknowledgementTimeouts - sampledMetrics.acknowledgementTimeouts)},
+        {"jpegBytes", m.lastFrameBytes}
+    });
+    if (performanceSamples.size() > 60) performanceSamples.removeFirst();
+    sampledMetrics = m;
+    lastPerformanceSampleMs = now;
+    maxHeartbeatDelayMs = 0;
 }
 
 void PhoneBridgeManager::emitTestPattern()
@@ -983,7 +1045,7 @@ void PhoneBridgeManager::emitTestPattern()
 }
 
 void PhoneBridgeManager::encodedFrameReady(quint32 generation, quint32 sequence,
-                                           const QByteArray& jpeg)
+                                           const QByteArray& jpeg, double deliveryMs)
 {
     if (!connected.load() || generation != connectionGeneration.load()) return;
     QByteArray packet = PhoneProtocol::BuildFrame(sequence,
@@ -991,6 +1053,8 @@ void PhoneBridgeManager::encodedFrameReady(quint32 generation, quint32 sequence,
     {
         QMutexLocker lock(&stateMutex);
         currentMetrics.lastFrameBytes = jpeg.size();
+        currentMetrics.deliveryMs = deliveryMs;
+        currentMetrics.maxDeliveryMs = std::max(currentMetrics.maxDeliveryMs, deliveryMs);
     }
     if (frameInFlight)
     {

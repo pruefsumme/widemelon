@@ -1413,7 +1413,12 @@ void ScreenPanelGL::capturePhoneFrame(GLuint sourceTexture, int sourceWidth, int
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, oldDrawFramebuffer);
     glDrawBuffer(oldDrawBuffer);
 
-    if (haveFrame) bridge->submitFrame(frame);
+    if (haveFrame)
+    {
+        const qint64 captureEnd = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+        bridge->submitFrame(frame, (captureEnd - now) / 1000000.0);
+    }
 }
 
 qreal ScreenPanelGL::devicePixelRatioFromScreen() const

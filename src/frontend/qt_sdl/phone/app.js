@@ -273,6 +273,7 @@
     const view = new DataView(buffer);
     if (view.getUint32(0, false) !== 0x574d4632 || view.getUint8(20) !== 1) return;
     const sequence = view.getUint32(4, true);
+    const decodeStarted = performance.now();
     try {
       const bitmap = await createImageBitmap(new Blob([new Uint8Array(buffer, 24)], {type: 'image/jpeg'}));
       if (source !== socket || !authenticated) { bitmap.close(); return; }
@@ -287,7 +288,7 @@
         lastFpsAt = now;
         metrics.textContent = `${displayedFps.toFixed(1)} FPS · frame ${sequence}`;
       }
-      send('frameAck', {seq: sequence});
+      send('frameAck', {seq: sequence, decodeMs: Math.round((performance.now() - decodeStarted) * 10) / 10});
     } catch (error) {
       if (source !== socket || !authenticated) return;
       metrics.textContent = `Decode error: ${error.message}`;

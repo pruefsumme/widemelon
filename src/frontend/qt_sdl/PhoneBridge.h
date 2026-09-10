@@ -9,6 +9,7 @@
 #include <QElapsedTimer>
 #include <QHash>
 #include <QImage>
+#include <QJsonArray>
 #include <QList>
 #include <QMutex>
 #include <QObject>
@@ -50,6 +51,19 @@ struct PhoneBridgeMetrics
     quint64 bytesSent = 0;
     quint64 protocolErrors = 0;
     quint64 authenticationFailures = 0;
+    quint64 inputMessages = 0;
+    quint64 acknowledgementTimeouts = 0;
+    double captureMs = 0.0;
+    double maxCaptureMs = 0.0;
+    double deliveryMs = 0.0;
+    double maxDeliveryMs = 0.0;
+    double frameAckMs = 0.0;
+    double maxFrameAckMs = 0.0;
+    double browserDecodeMs = 0.0;
+    double maxBrowserDecodeMs = 0.0;
+    double offeredFps = 0.0;
+    double sentFps = 0.0;
+    double ackedFps = 0.0;
     double lastEncodeMs = 0.0;
     double averageEncodeMs = 0.0;
     double roundTripMs = 0.0;
@@ -97,7 +111,7 @@ public:
     melonDS::u32 remoteTouchSnapshot() const;
 
     // Safe to call from the emulator/render thread. Work is replaced, never queued.
-    void submitFrame(const QImage& image);
+    void submitFrame(const QImage& image, double captureMs = 0.0);
     bool wantsFrames() const { return connected.load(std::memory_order_relaxed) || testPattern.load(std::memory_order_relaxed); }
     bool testPatternEnabled() const { return testPattern.load(std::memory_order_relaxed); }
     void setTestPattern(bool enabled);
@@ -138,7 +152,8 @@ private:
     void generatePairingCredentials();
     void clearPairingCredentials();
     void handleTextMessage(const QString& message);
-    void encodedFrameReady(quint32 generation, quint32 sequence, const QByteArray& jpeg);
+    void encodedFrameReady(quint32 generation, quint32 sequence, const QByteArray& jpeg, double deliveryMs);
+    void samplePerformance(qint64 now);
     void sendPendingFrame();
     void sendLayout();
     void rotateLogIfNeeded() const;
@@ -149,6 +164,11 @@ private:
     QString errorText;
     mutable QStringList recentLogs;
     PhoneBridgeMetrics currentMetrics;
+    PhoneBridgeMetrics sampledMetrics;
+    QJsonArray performanceSamples;
+    qint64 lastPerformanceSampleMs = 0;
+    qint64 lastHeartbeatCheckMs = 0;
+    qint64 maxHeartbeatDelayMs = 0;
 
     QTcpServer* httpServer = nullptr;
     QWebSocketServer* webSocketServer = nullptr;
