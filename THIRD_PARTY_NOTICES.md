@@ -26,3 +26,11 @@ components are installed beside this notice and remain in the source tree.
 Linux AppImages also contain copyright files from the distribution packages
 whose shared libraries are bundled. Matching sources for bundled copyleft
 libraries are supplied in the release's third-party source archive.
+
+Windows and macOS packages statically link their vcpkg dependencies. Their
+`doc/dependencies/` directories (inside `Contents/Resources/` on macOS)
+contain the installed ports' copyright and license texts. Package versions
+are recorded in `dependency-versions.txt`. Matching source downloads, pinned
+build recipes, and patches are supplied in a dependency-source archive for
+each native platform. The application and dependency sources together allow
+modified libraries to be rebuilt and relinked into WideMelon.

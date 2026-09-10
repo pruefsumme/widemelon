@@ -1,0 +1,181 @@
+# Copyright (C) 2026 WideMelon contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+name: Release
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["feat/v1-release"]
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+      - id: version
+        shell: bash
+        run: |
+          version=$(sed -n 's/^set(WIDEMELON_VERSION "\([0-9.]*\)")/\1/p' CMakeLists.txt)
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            [[ "$GITHUB_REF_NAME" == "v$version" ]]
+          else
+            version="$version-dev.$GITHUB_RUN_NUMBER"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  linux:
+    needs: version
+    uses: ./.github/workflows/package-linux.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+
+  native:
+    name: Package ${{ matrix.platform }}
+    needs: version
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-x86_64
+            runner: windows-2025
+            preset: release-windows-x86_64
+            triplet: x64-windows-static-release
+          - platform: macos-x86_64
+            runner: macos-15-intel
+            preset: release-mac-x86_64
+            triplet: x64-osx-13-release
+          - platform: macos-arm64
+            runner: macos-15
+            preset: release-mac-arm64
+            triplet: arm64-osx-13-release
+    runs-on: ${{ matrix.runner }}
+    env:
+      # Cached installs are only restored together with their source downloads.
+      VCPKG_BINARY_SOURCES: clear
+      VCPKG_MAX_CONCURRENCY: 3
+      MELONDS_GIT_BRANCH: ${{ github.ref }}
+      MELONDS_GIT_HASH: ${{ github.sha }}
+      MELONDS_BUILD_PROVIDER: GitHub Actions
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - name: Set up Visual Studio
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+      - name: Install macOS build tools
+        if: runner.os == 'macOS'
+        run: brew install autoconf automake autoconf-archive libtool ninja pkg-config
+      - name: Check out pinned vcpkg
+        uses: actions/checkout@v6
+        with:
+          repository: microsoft/vcpkg
+          ref: 9b965a116838c6cdcd36bca60d1b81b030c8ab8d
+          path: .deps/vcpkg
+      - name: Restore dependencies and sources
+        uses: actions/cache/restore@v4
+        id: deps
+        with:
+          path: |
+            .deps/vcpkg/downloads
+            build/native/vcpkg_installed
+          key: native-${{ matrix.runner }}-${{ matrix.triplet }}-${{ hashFiles('vcpkg.json', 'cmake/overlay-ports/**', 'cmake/overlay-triplets/**') }}
+      - name: Configure
+        run: |
+          args=()
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            args+=(-DCMAKE_OSX_DEPLOYMENT_TARGET=13.0)
+          fi
+          cmake --preset "${{ matrix.preset }}" -B build/native \
+            -DVCPKG_ROOT="$GITHUB_WORKSPACE/.deps/vcpkg" \
+            -DUSE_RECOMMENDED_TRIPLETS=OFF \
+            -DVCPKG_TARGET_TRIPLET="${{ matrix.triplet }}" \
+            -DVCPKG_HOST_TRIPLET="${{ matrix.triplet }}" \
+            -DENABLE_LTO_RELEASE=OFF -DMELONDS_EMBED_BUILD_INFO=ON "${args[@]}"
+      - name: Save dependencies and sources
+        if: steps.deps.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .deps/vcpkg/downloads
+            build/native/vcpkg_installed
+          key: ${{ steps.deps.outputs.cache-primary-key }}
+      - name: Build application
+        run: cmake --build build/native --parallel 3
+      - name: Build and run tests
+        run: |
+          args=()
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            args+=(-DCMAKE_CXX_COMPILER=clang++ -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded)
+          else
+            args+=(-DCMAKE_OSX_DEPLOYMENT_TARGET=13.0)
+          fi
+          cmake -S tests -B build/tests -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DUSE_QT6=ON -DVCPKG_MANIFEST_MODE=OFF \
+            -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/.deps/vcpkg/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_INSTALLED_DIR="$GITHUB_WORKSPACE/build/native/vcpkg_installed" \
+            -DVCPKG_TARGET_TRIPLET="${{ matrix.triplet }}" "${args[@]}"
+          cmake --build build/tests --parallel 3
+          ctest --test-dir build/tests --output-on-failure
+      - name: Package application and dependency sources
+        run: python scripts/package-native.py "${{ needs.version.outputs.version }}" "${{ matrix.platform }}" "${{ matrix.triplet }}"
+      - name: Upload packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: WideMelon-${{ needs.version.outputs.version }}-${{ matrix.platform }}
+          path: dist/*
+          if-no-files-found: error
+          compression-level: 0
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [version, linux, native]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: WideMelon-*
+          path: dist
+          merge-multiple: true
+      - name: Verify complete asset set and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          assets=(
+            "WideMelon-$VERSION-x86_64.AppImage"
+            "widemelon-$VERSION-source.tar.xz"
+            "widemelon-$VERSION-third-party-source.tar.xz"
+          )
+          for platform in windows-x86_64 macos-x86_64 macos-arm64; do
+            assets+=("WideMelon-$VERSION-$platform.zip")
+            assets+=("widemelon-$VERSION-$platform-dependency-source.tar.gz")
+          done
+          for asset in "${assets[@]}"; do test -s "dist/$asset"; done
+          (cd dist && sha256sum "${assets[@]}" > SHA256SUMS && sha256sum --check SHA256SUMS)
+          paths=()
+          for asset in "${assets[@]}" SHA256SUMS; do paths+=("dist/$asset"); done
+          gh release create "$GITHUB_REF_NAME" "${paths[@]}" \
+            --verify-tag --title "WideMelon $VERSION" --notes-file RELEASE_NOTES.md --latest

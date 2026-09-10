@@ -188,7 +188,7 @@ endif()
 
 
 if (BUILD_STATIC)
-    qt_import_plugins(melonDS INCLUDE Qt::QSvgPlugin)
+    qt_import_plugins(melonDS INCLUDE Qt::QSvgPlugin Qt::QJpegPlugin)
     if (WIN32 AND USE_QT6)
         qt_import_plugins(melonDS INCLUDE Qt::QModernWindowsStylePlugin)
     endif()
@@ -220,7 +220,7 @@ if (WIN32)
         target_compile_definitions(melonDS PRIVATE WIN32_PORTABLE)
     endif()
 
-    string(REPLACE . , MELON_RC_VERSION ${melonDS_VERSION})
+    string(REPLACE . , MELON_RC_VERSION "${WIDEMELON_VERSION}.0")
     configure_file("${CMAKE_SOURCE_DIR}/res/melon.rc.in" "${CMAKE_BINARY_DIR}/res/melon.rc")
     target_sources(melonDS PUBLIC "${CMAKE_BINARY_DIR}/res/melon.rc")
     target_include_directories(melonDS PRIVATE "${CMAKE_BINARY_DIR}/res")
@@ -282,7 +282,16 @@ if (UNIX AND NOT APPLE)
 
     install(FILES io.github.pruefsumme.WideMelon.desktop DESTINATION ${CMAKE_INSTALL_PREFIX}/share/applications)
     install(FILES io.github.pruefsumme.WideMelon.metainfo.xml DESTINATION ${CMAKE_INSTALL_PREFIX}/share/metainfo)
-    set(WIDEMELON_DOC_DIR ${CMAKE_INSTALL_PREFIX}/share/doc/widemelon)
+endif()
+
+if (APPLE)
+    set(WIDEMELON_DOC_DIR Applications/WideMelon.app/Contents/Resources/doc)
+elseif (WIN32)
+    set(WIDEMELON_DOC_DIR doc)
+else()
+    set(WIDEMELON_DOC_DIR share/doc/widemelon)
+endif()
+
     install(FILES
         ${CMAKE_SOURCE_DIR}/LICENSE
         ${CMAKE_SOURCE_DIR}/NOTICE.md
@@ -310,6 +319,8 @@ if (UNIX AND NOT APPLE)
         ${CMAKE_SOURCE_DIR}/licenses/ENet-LICENSE
         ${CMAKE_SOURCE_DIR}/licenses/QRCodeGenerator-LICENSE
         DESTINATION ${WIDEMELON_DOC_DIR}/licenses)
+
+if (UNIX AND NOT APPLE)
     install(TARGETS melonDS BUNDLE DESTINATION ${CMAKE_BINARY_DIR} RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
 
     if (NOT USE_QT6)
@@ -318,7 +329,9 @@ if (UNIX AND NOT APPLE)
             INTERPROCEDURAL_OPTIMIZATION_RELEASE OFF)
     endif()
 elseif(APPLE)
-    install(TARGETS melonDS BUNDLE DESTINATION "${CMAKE_INSTALL_PREFIX}/Applications")
+    install(TARGETS melonDS BUNDLE DESTINATION Applications)
+elseif(WIN32)
+    install(TARGETS melonDS RUNTIME DESTINATION .)
 endif()
 
 if (ENABLE_OGLRENDERER)

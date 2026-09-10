@@ -19,10 +19,13 @@ instead of being stretched.
 
 ## Download
 
-Get the latest Linux AppImage from the
-[Releases page](https://github.com/pruefsumme/widemelon/releases). Development
+Get Windows x64, macOS (Apple Silicon or Intel), and Linux x64 builds from the
+[Releases page](https://github.com/pruefsumme/widemelon/releases). Extract the
+Windows ZIP and open `widemelon.exe`; on macOS, move `WideMelon.app` to
+Applications; on Linux, mark the AppImage executable and open it. The release
+notes include system requirements and first-run instructions. Development
 builds are available from the
-[Package Linux workflow](https://github.com/pruefsumme/widemelon/actions/workflows/package-linux.yml).
+[Release workflow](https://github.com/pruefsumme/widemelon/actions/workflows/release.yml).
 
 ## Play
 
@@ -85,7 +88,7 @@ The user reviews and runs the shown commands. Automatic firewalld checks detect
 installation only, because even read-only queries can trigger PolicyKit. UFW
 checks use unprivileged status or its boot configuration, with an unknown result
 when access is unavailable. Unsupported firewall tools receive general guidance;
-the wizard includes native system-settings directions for future Windows/macOS
+the wizard includes native system-settings directions for Windows/macOS
 builds, not automated firewall configuration on those platforms. If the phone
 already connects, no new firewall rule is needed. The bridge does not stream audio.
 
@@ -104,14 +107,16 @@ requires HTTPS, so you may need to adjust the phone's auto-lock setting.
 
 ## What to expect
 
-WideMelon is still an alpha. Some games hide objects outside the original
+Widescreen compatibility remains experimental. Some games hide objects outside the original
 screen area, and some effects may not cover the added space. Battles, videos,
 and menus can remain 4:3.
 
-The widescreen mode uses the classic OpenGL renderer. Ready-made builds are
-currently available for Linux only.
+The widescreen mode uses the classic OpenGL renderer. Native 4:3 is the
+compatibility profile when a game does not work well with expanded views.
 
 ## Build from source
+
+See [BUILD.md](BUILD.md) for Windows, macOS, and Linux build and release instructions.
 
 On Ubuntu 24.04, install the build tools and libraries:
 
@@ -242,7 +247,7 @@ For a tagged binary release, commit the release state and create its matching
 complete source archive:
 
 ```sh
-./scripts/package-source.sh 0.2.0-alpha
+./scripts/package-source.sh 1.0.0
 ```
 
 ## Licence

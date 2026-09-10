@@ -1,81 +1,126 @@
-# Building melonDS
+<!-- Copyright (C) 2026 WideMelon contributors -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 
-* [Linux](#linux)
-* [Windows](#windows)
-* [macOS](#macos)
+# Building WideMelon
+
+Clone `https://github.com/pruefsumme/widemelon.git` or extract the complete
+application source archive from a release. No game files are needed to build
+or run the automated tests. C++17, CMake, Ninja, and Git are required.
 
 ## Linux
-1. Install dependencies:
-   * Ubuntu:
-     * All versions: `sudo apt install cmake extra-cmake-modules libcurl4-gnutls-dev libpcap0.8-dev libsdl2-dev libarchive-dev libenet-dev libzstd-dev libfaad-dev`
-     * 24.04: `sudo apt install qt6-{base,base-private,multimedia,svg}-dev`
-     * 22.04: `sudo apt install qtbase6-dev qtbase6-private-dev qtmultimedia6-dev libqt6svg6-dev`
-     * Older versions: `sudo apt install qtbase5-dev qtbase5-private-dev qtmultimedia5-dev libqt5svg5-dev`  
-       Also add `-DUSE_QT6=OFF` to the first CMake command below.
-   * Fedora: `sudo dnf install gcc-c++ cmake extra-cmake-modules SDL2-devel libarchive-devel enet-devel libzstd-devel faad2-devel qt6-{qtbase,qtbase-private,qtmultimedia,qtsvg}-devel wayland-devel`
-   * Arch Linux: `sudo pacman -S base-devel cmake extra-cmake-modules git libpcap sdl2 qt6-{base,multimedia,svg} libarchive enet zstd faad2`
-2. Download the melonDS repository and prepare:
-   ```bash
-   git clone https://github.com/melonDS-emu/melonDS
-   cd melonDS
-   ```
-3. Compile:
-   ```bash
-   cmake -B build
-   cmake --build build -j$(nproc --all)
-   ```
 
-## Windows
-1. Install [MSYS2](https://www.msys2.org/)
-2. Open the MSYS2 terminal from the Start menu:
-   * For x64 systems (most common), use **MSYS2 UCRT64**
-   * For ARM64 systems, use **MSYS2 CLANGARM64**
-3. Update the packages using `pacman -Syu` and reopen the same terminal if it asks you to
-4. Install git and clone the repository
-   ```bash
-   pacman -S git
-   git clone https://github.com/melonDS-emu/melonDS
-   cd melonDS
-   ```
-5. Install dependencies:  
-   Replace `<prefix>` below with `mingw-w64-ucrt-x86_64` on x64 systems, or `mingw-w64-clang-aarch64` on ARM64 systems.
-   ```bash
-   pacman -S <prefix>-{toolchain,cmake,SDL2,libarchive,enet,zstd,faad2}
-   ```
-6. Install Qt and configure the build directory
-   * Dynamic builds (with DLLs)
-     1. Install Qt: `pacman -S <prefix>-{qt6-base,qt6-svg,qt6-multimedia,qt6-svg,qt6-tools}`
-     2. Set up the build directory with `cmake -B build`
-   * Static builds (without DLLs, standalone executable)
-     1. Install Qt: `pacman -S <prefix>-qt5-static`  
-        (Note: As of writing, the `qt6-static` package does not work.)
-     2. Set up the build directory with `cmake -B build -DBUILD_STATIC=ON -DUSE_QT6=OFF -DCMAKE_PREFIX_PATH=$MSYSTEM_PREFIX/qt5-static`
-7. Compile: `cmake --build build`
+On Ubuntu 24.04:
 
-If everything went well, melonDS should now be in the `build` folder. For dynamic builds, you may need to run melonDS from the MSYS2 terminal in order for it to find the required DLLs.
+```sh
+sudo apt install build-essential cmake ninja-build git pkg-config nodejs \
+  extra-cmake-modules libcurl4-gnutls-dev libpcap0.8-dev libsdl2-dev \
+  libarchive-dev libzstd-dev libegl1-mesa-dev libgl1-mesa-dev libwayland-dev \
+  qt6-base-dev qt6-base-private-dev qt6-multimedia-dev libqt6svg6-dev \
+  qt6-websockets-dev
+./scripts/build.sh
+./widemelon
+```
 
-## macOS
-1. Install the [Homebrew Package Manager](https://brew.sh)
-2. Install dependencies: `brew install git pkg-config cmake sdl2 qt@6 libarchive enet zstd faad2`
-3. Download the melonDS repository and prepare:
-   ```zsh
-   git clone https://github.com/melonDS-emu/melonDS
-   cd melonDS
-   ```
-4. Compile:
-   ```zsh
-   cmake -B build -DCMAKE_PREFIX_PATH="$(brew --prefix qt@6);$(brew --prefix libarchive)"
-   cmake --build build -j$(sysctl -n hw.logicalcpu)
-   ```
-If everything went well, melonDS.app should now be in the `build` directory.
+The script builds pinned FAAD2 2.11.2 and ENet 1.3.18 from `.deps/`, then builds
+the emulator and runs its tests. It accepts `WIDEMELON_BUILD_JOBS` (default 6).
+Use `WIDEMELON_USE_QT6=0` with Qt 5.15 development libraries to build with Qt 5.
+Linux release AppImages use Qt 5 on Ubuntu 22.04 for broader compatibility.
 
-### Self-contained app bundle
-If you want an app bundle that can be distributed to other computers without needing to install dependencies through Homebrew, you can additionally run `
-../tools/mac-libs.rb .` after the build is completed, or add `-DMACOS_BUNDLE_LIBS=ON` to the first CMake command.
+## Windows and macOS release builds
 
-## Nix (macOS/Linux)
+Native releases statically link dependencies built from the registry and
+overlays pinned in `vcpkg.json`. Qt WebSockets, Concurrent, and JPEG support
+are required for the phone bridge. The release workflow builds on Windows
+x64, Intel macOS, and Apple Silicon macOS separately.
 
-melonDS provides a Nix flake with support for both macOS and Linux. The [Nix package manager](https://nixos.org) needs to be installed to use it.
+On Windows, install Visual Studio 2022 or newer with the C++ desktop workload,
+Clang/LLVM, CMake, Ninja, Git, Python 3.11+, and Node.js 22. Run from a developer
+shell with `clang.exe`, `clang++.exe`, and `llvm-rc.exe` on PATH. The workflow
+uses Git Bash after activating Visual Studio. On macOS, install Xcode's command
+line tools and `brew install cmake ninja autoconf automake autoconf-archive
+libtool pkg-config python node`.
 
-* To run melonDS, just type `nix run github:melonDS-emu/melonDS`.
-* To get a shell for development, clone the melonDS repository and type `nix develop` in its directory.
+Prepare the pinned dependency manager (use Git Bash on Windows):
+
+```sh
+git clone https://github.com/microsoft/vcpkg.git .deps/vcpkg
+git -C .deps/vcpkg checkout 9b965a116838c6cdcd36bca60d1b81b030c8ab8d
+```
+
+Select the preset and triplet for the host:
+
+| System | Preset | Triplet |
+| --- | --- | --- |
+| Windows x64 | `release-windows-x86_64` | `x64-windows-static-release` |
+| macOS Intel | `release-mac-x86_64` | `x64-osx-13-release` |
+| macOS Apple Silicon | `release-mac-arm64` | `arm64-osx-13-release` |
+
+For example, on Apple Silicon:
+
+```sh
+cmake --preset release-mac-arm64 -B build/native \
+  -DVCPKG_ROOT="$PWD/.deps/vcpkg" -DUSE_RECOMMENDED_TRIPLETS=OFF \
+  -DVCPKG_TARGET_TRIPLET=arm64-osx-13-release \
+  -DVCPKG_HOST_TRIPLET=arm64-osx-13-release \
+  -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 -DENABLE_LTO_RELEASE=OFF
+cmake --build build/native --parallel 3
+```
+
+Use the corresponding preset and triplet on other hosts; omit the macOS
+deployment argument on Windows. The output is `build/native/widemelon.exe`
+or `build/native/WideMelon.app`. The first dependency build can take an hour.
+The selected Qt version requires Windows 10 1809+ or macOS 13+; see
+[Qt's platform requirements](https://doc.qt.io/qt-6/supported-platforms.html).
+
+Configure tests using the same static dependencies (replace `TRIPLET`):
+
+```sh
+cmake -S tests -B build/tests -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DUSE_QT6=ON -DVCPKG_MANIFEST_MODE=OFF \
+  -DCMAKE_TOOLCHAIN_FILE="$PWD/.deps/vcpkg/scripts/buildsystems/vcpkg.cmake" \
+  -DVCPKG_INSTALLED_DIR="$PWD/build/native/vcpkg_installed" \
+  -DVCPKG_TARGET_TRIPLET=TRIPLET
+cmake --build build/tests --parallel 3
+ctest --test-dir build/tests --output-on-failure
+```
+
+On Windows also pass `-DCMAKE_CXX_COMPILER=clang++` and
+`-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded` when configuring tests. On macOS
+pass `-DCMAKE_OSX_DEPLOYMENT_TARGET=13.0`. The bridge tests use Qt's offscreen
+platform and generated frames; they do not require a ROM.
+
+## Release packaging
+
+`.github/workflows/release.yml` builds all four artifacts, runs tests, packages
+licenses and exact dependency sources, and publishes only after every platform
+succeeds. Branch and manual runs only upload development artifacts. A `v1.0.0`
+tag must match `WIDEMELON_VERSION` in `CMakeLists.txt` to publish. Release notes
+come from `RELEASE_NOTES.md`. `SHA256SUMS` covers every published asset.
+
+Run `./scripts/build.sh` before committing release changes. Once committed:
+
+```sh
+./scripts/package-source.sh 1.0.0
+```
+
+The native packaging command, after building and testing on that host, is:
+
+```sh
+python scripts/package-native.py 1.0.0 macos-arm64 arm64-osx-13-release
+```
+
+Use the matching platform/triplet for Windows or Intel macOS. Keep the vcpkg
+download cache: it is the source input for the dependency archive. Native
+release CI disables separate binary caching and restores installed libraries
+only together with their downloaded sources. The archive includes pinned
+vcpkg recipes and patches, original source downloads, package versions, and
+the application commit. See `SOURCE.md` for rebuilding from those archives.
+
+macOS apps are ad-hoc signed; no signing identity or notarization credentials
+are configured. Windows executables are unsigned. Native packages include
+licenses and source access instructions. Never add ROMs, BIOS/firmware dumps,
+saves, game assets, or generated build directories to a release.
+
+Automated tests cannot prove gameplay, GPU output, or behavior on every driver.
+Before publishing, smoke-test the native setup dialog, ROM selection, 4:3 and
+expanded OpenGL profiles, and phone pairing with a locally available game.

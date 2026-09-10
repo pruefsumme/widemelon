@@ -14,15 +14,15 @@ FILETYPE VFT_APP
 	{
 		BLOCK "040904E4"
 		{
-			VALUE "CompanyName", "Melon Factory of Kuribo64"
-			VALUE "FileVersion", "${melonDS_VERSION}"
-			VALUE "FileDescription", "melonDS emulator"
-			VALUE "InternalName", "SDnolem"
-			VALUE "LegalCopyright", "2016-2025 melonDS team"
+			VALUE "CompanyName", "WideMelon contributors"
+			VALUE "FileVersion", "${WIDEMELON_VERSION}"
+			VALUE "FileDescription", "WideMelon widescreen Nintendo DS emulator"
+			VALUE "InternalName", "widemelon"
+			VALUE "LegalCopyright", "2016-2026 melonDS team; 2026 WideMelon contributors"
 			VALUE "LegalTrademarks", ""
-			VALUE "OriginalFilename", "melonDS.exe"
-			VALUE "ProductName", "melonDS"
-			VALUE "ProductVersion", "${melonDS_VERSION}"
+			VALUE "OriginalFilename", "widemelon.exe"
+			VALUE "ProductName", "WideMelon"
+			VALUE "ProductVersion", "${WIDEMELON_VERSION}"
 		}
 	}
   BLOCK "VarFileInfo"
