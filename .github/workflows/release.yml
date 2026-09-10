@@ -99,6 +99,7 @@ jobs:
             .deps/vcpkg/downloads
             build/native/vcpkg_installed
           key: native-${{ matrix.runner }}-${{ matrix.triplet }}-${{ hashFiles('vcpkg.json', 'cmake/overlay-ports/**', 'cmake/overlay-triplets/**') }}
+          restore-keys: native-${{ matrix.runner }}-${{ matrix.triplet }}-
       - name: Configure
         run: |
           args=()
@@ -112,7 +113,7 @@ jobs:
             -DVCPKG_HOST_TRIPLET="${{ matrix.triplet }}" \
             -DENABLE_LTO_RELEASE=OFF -DMELONDS_EMBED_BUILD_INFO=ON "${args[@]}"
       - name: Save dependencies and sources
-        if: steps.deps.outputs.cache-hit != 'true'
+        if: always() && steps.deps.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: |

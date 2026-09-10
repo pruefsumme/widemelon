@@ -12,6 +12,18 @@ vcpkg_cmake_configure(
 
 vcpkg_cmake_install()
 
+if(VCPKG_TARGET_IS_WINDOWS AND NOT VCPKG_TARGET_IS_MINGW)
+    # MSVC supplies math functions in its CRT; there is no separate libm.
+    foreach(config "" "/debug")
+        set(pc "${CURRENT_PACKAGES_DIR}${config}/lib/pkgconfig/faad2.pc")
+        if(EXISTS "${pc}")
+            file(READ "${pc}" contents)
+            string(REPLACE "Libs.private: -lm" "Libs.private:" contents "${contents}")
+            file(WRITE "${pc}" "${contents}")
+        endif()
+    endforeach()
+endif()
+
 vcpkg_copy_pdbs()
 vcpkg_fixup_pkgconfig()
 

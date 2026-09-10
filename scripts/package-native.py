@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import plistlib
 import re
 import shutil
 import subprocess
@@ -70,6 +71,13 @@ def main():
         shutil.copy2(installed / "vcpkg/status", docs / "dependency-versions.txt")
         if mac:
             executable = app / "Contents/MacOS/WideMelon"
+            with (app / "Contents/Info.plist").open("rb") as stream:
+                info = plistlib.load(stream)
+            if info["CFBundleExecutable"] != executable.name or not executable.is_file():
+                raise RuntimeError("Bundle executable does not match its Info.plist")
+            for document in info["CFBundleDocumentTypes"]:
+                if not all(isinstance(ext, str) for ext in document["CFBundleTypeExtensions"]):
+                    raise RuntimeError("Invalid file association in Info.plist")
             linked = run("otool", "-L", str(executable), capture_output=True).stdout
             for line in linked.splitlines()[1:]:
                 library = line.strip().split(" (", 1)[0]

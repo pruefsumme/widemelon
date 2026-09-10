@@ -73,29 +73,29 @@
             <string>Archive containing ROM</string>
             <key>CFBundleTypeExtensions</key>
             <array>
-                <key>zip</key>
-                <key>7z</key>
-                <key>rar</key>
-                <key>tar</key>
-                <key>tar.gz</key>
-                <key>tgz</key>
-                <key>tar.xz</key>
-                <key>txz</key>
-                <key>tar.bz2</key>
-                <key>tbz2</key>
-                <key>tar.lz4</key>
-                <key>tlz4</key>
-                <key>tar.zst</key>
-                <key>tzst</key>
-                <key>tar.Z</key>
-                <key>taz</key>
-                <key>tar.lz</key>
-                <key>tar.lzma</key>
-                <key>tlz</key>
-                <key>tar.lrz</key>
-                <key>tlrz</key>
-                <key>tar.lzo</key>
-                <key>tzo</key>
+                <string>zip</string>
+                <string>7z</string>
+                <string>rar</string>
+                <string>tar</string>
+                <string>tar.gz</string>
+                <string>tgz</string>
+                <string>tar.xz</string>
+                <string>txz</string>
+                <string>tar.bz2</string>
+                <string>tbz2</string>
+                <string>tar.lz4</string>
+                <string>tlz4</string>
+                <string>tar.zst</string>
+                <string>tzst</string>
+                <string>tar.Z</string>
+                <string>taz</string>
+                <string>tar.lz</string>
+                <string>tar.lzma</string>
+                <string>tlz</string>
+                <string>tar.lrz</string>
+                <string>tlrz</string>
+                <string>tar.lzo</string>
+                <string>tzo</string>
             </array>
             <key>CFBundleTypeRole</key>
             <string>Viewer</string>

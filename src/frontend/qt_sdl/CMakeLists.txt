@@ -239,12 +239,6 @@ if (WIN32)
 
     if (MINGW)
         configure_file("${CMAKE_SOURCE_DIR}/res/xp.manifest.in" "${CMAKE_BINARY_DIR}/res/xp.manifest")
-    else()
-        # Work around faad2 unconditionally linking libm even on Windows
-        if (USE_VCPKG)
-            add_library(m STATIC)
-            target_link_libraries(melonDS PUBLIC m)
-        endif()
     endif()
 endif()
 
