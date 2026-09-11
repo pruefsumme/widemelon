@@ -22,12 +22,16 @@ normal proportions instead of being stretched.
 Get Windows, macOS, and Linux builds from the
 [Releases page](https://github.com/pruefsumme/widemelon/releases).
 
-- Windows: extract the ZIP and open `widemelon.exe`.
-- macOS: choose `macos-arm64` for Apple Silicon or `macos-x86_64` for Intel,
-  then move `WideMelon.app` to Applications.
-- Linux: mark the AppImage executable and open it.
+- Windows: download the x64 `.exe` and open it directly.
+- macOS: choose the Apple Silicon or Intel `.dmg`, then drag WideMelon to
+  Applications.
+- Ubuntu/Debian: install the `amd64.deb` package.
+- Other x64 Linux distributions: mark the AppImage executable and open it.
 
-Ad-hoc macOS builds may need a one-time right-click **Open** confirmation.
+Windows builds are unsigned and can show a SmartScreen warning. macOS builds
+are ad-hoc signed unless stated otherwise and may need approval in
+**System Settings > Privacy & Security**. Never disable either platform's
+security checks globally; only approve files downloaded from this repository.
 Development builds are available from the
 [Release workflow](https://github.com/pruefsumme/widemelon/actions/workflows/release.yml).
 

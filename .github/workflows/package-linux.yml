@@ -12,8 +12,8 @@ permissions:
   contents: read
 
 jobs:
-  appimage:
-    name: AppImage
+  packages:
+    name: AppImage and Debian
     runs-on: ubuntu-22.04
     timeout-minutes: 60
 
@@ -38,10 +38,10 @@ jobs:
           sudo apt-get install --no-install-recommends \
             build-essential cmake ninja-build git pkg-config wget xauth xvfb \
             extra-cmake-modules libcurl4-gnutls-dev libpcap0.8-dev \
-            libsdl2-dev libarchive-dev libzstd-dev \
+            libsdl2-dev libarchive-dev libzstd-dev libenet-dev libfaad-dev \
             libegl1-mesa-dev libgl1-mesa-dev libwayland-dev libfuse2 \
             qtbase5-dev qtbase5-private-dev qtmultimedia5-dev \
-            libqt5svg5-dev libqt5websockets5-dev qtwayland5
+            libqt5svg5-dev libqt5websockets5-dev qtwayland5 dpkg-dev zstd
 
       - name: Enable matching source packages
         run: |
@@ -58,18 +58,35 @@ jobs:
           WIDEMELON_USE_QT6: "0"
         run: ./scripts/build.sh
 
-      - name: Generate complete source archive
+      - name: Generate application source input
         run: ./scripts/package-source.sh "$VERSION"
+
+      - name: Build Debian package
+        run: |
+          deb_version=${VERSION/-dev./~dev.}
+          cmake -S . -B build/deb -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr \
+            -DENABLE_LTO_RELEASE=OFF -DUSE_QT6=OFF \
+            -DWIDEMELON_ENABLE_DEB=ON \
+            -DWIDEMELON_PACKAGE_VERSION="$deb_version"
+          cmake --build build/deb --parallel
+          cpack --config build/deb/CPackConfig.cmake -B dist -G DEB
+          if [[ "$deb_version" != "$VERSION" ]]; then
+            mv "dist/widemelon_${deb_version}-1_amd64.deb" \
+              "dist/widemelon_${VERSION}-1_amd64.deb"
+          fi
+          dpkg-deb --info "dist/widemelon_${VERSION}-1_amd64.deb"
+
+      - name: Test Debian package
+        run: |
+          sudo apt-get install --yes "./dist/widemelon_${VERSION}-1_amd64.deb"
+          xvfb-run -a widemelon --help
 
       - name: Stage application
         run: |
           cmake -S . -B build -G Ninja \
             -DCMAKE_INSTALL_PREFIX=/usr -DENABLE_LTO_RELEASE=OFF -DUSE_QT6=OFF
           DESTDIR="$GITHUB_WORKSPACE/build/AppDir" cmake --install build
-          for size in 16 32 48 64 128 256; do
-            install -Dm644 "assets/icons/widemelon-$size.png" \
-              "build/AppDir/usr/share/icons/hicolor/${size}x${size}/apps/io.github.pruefsumme.WideMelon.png"
-          done
 
       - name: Build AppImage
         env:
@@ -93,22 +110,27 @@ jobs:
       - name: Archive bundled-library sources
         run: ./scripts/package-third-party-source.sh "$VERSION" build/AppDir
 
-      - name: Write checksums
-        run: |
-          cd dist
-          sha256sum \
-            "WideMelon-${VERSION}-x86_64.AppImage" \
-            "widemelon-${VERSION}-source.tar.xz" \
-            "widemelon-${VERSION}-third-party-source.tar.xz" \
-            > SHA256SUMS
-
-      - name: Upload packages
+      - name: Upload AppImage
         uses: actions/upload-artifact@v7
         with:
-          name: WideMelon-${{ env.VERSION }}-linux-x86_64
+          name: WideMelon-${{ env.VERSION }}-linux-x86_64-appimage
+          path: dist/WideMelon-${{ env.VERSION }}-x86_64.AppImage
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Upload Debian package
+        uses: actions/upload-artifact@v7
+        with:
+          name: WideMelon-${{ env.VERSION }}-linux-x86_64-debian
+          path: dist/widemelon_${{ env.VERSION }}-1_amd64.deb
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Upload Linux source inputs
+        uses: actions/upload-artifact@v7
+        with:
+          name: WideMelon-${{ env.VERSION }}-linux-x86_64-source
           path: |
-            dist/WideMelon-${{ env.VERSION }}-x86_64.AppImage
             dist/widemelon-${{ env.VERSION }}-source.tar.xz
             dist/widemelon-${{ env.VERSION }}-third-party-source.tar.xz
-            dist/SHA256SUMS
           if-no-files-found: error

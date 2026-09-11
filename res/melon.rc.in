@@ -1,8 +1,8 @@
 #define VOS_NT_WINDOWS32    0x00040004L
 #define VFT_APP                      0x00000001L
 
-//this will set your .exe icon
-100 ICON MOVEABLE PURE LOADONCALL DISCARDABLE "${CMAKE_SOURCE_DIR}/res/melon.ico"
+// WideMelon shell, taskbar, and SmartScreen icon.
+100 ICON MOVEABLE PURE LOADONCALL DISCARDABLE "${CMAKE_SOURCE_DIR}/res/widemelon.ico"
 
 //include version information in .exe, modify these values to match your needs
 1 VERSIONINFO

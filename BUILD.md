@@ -210,11 +210,12 @@ WIDEMELON_PHONE_LOG_LEVEL=debug WIDEMELON_PHONE_LOG_FILE=1 ./widemelon
 
 ## Release packaging
 
-`.github/workflows/release.yml` builds all four artifacts, runs tests, packages
-licenses and exact dependency sources, and publishes only after every platform
-succeeds. Branch and manual runs only upload development artifacts. A `v1.0.0`
-tag must match `WIDEMELON_VERSION` in `CMakeLists.txt` to publish. Release notes
-come from `RELEASE_NOTES.md`. `SHA256SUMS` covers every published asset.
+`.github/workflows/release.yml` builds direct Windows, macOS DMG, Linux AppImage,
+and Debian downloads, runs tests, packages exact dependency sources, and
+publishes only after every platform succeeds. Branch and manual runs only upload
+development artifacts. A `v1.0.0` tag must match `WIDEMELON_VERSION` in
+`CMakeLists.txt` to publish. Release notes come from `RELEASE_NOTES.md`.
+`SHA256SUMS` covers every published asset.
 
 Run `./scripts/build.sh` before committing release changes. Once committed:
 
@@ -228,27 +229,27 @@ The native packaging command, after building and testing on that host, is:
 python scripts/package-native.py 1.0.0 macos-arm64 arm64-osx-13-release
 ```
 
-Use the matching platform/triplet for Windows or Intel macOS. On macOS, this
-creates both `dist/WideMelon.app` and the release ZIP; the former is the direct
-application artifact exposed by the development workflow. The ZIP contains
-only `WideMelon.app`. The dependency-source archive is a separate artifact and
-release asset. Keep the vcpkg download cache: it is the source input for that
-archive. Native release CI disables separate binary caching and restores
-installed libraries only together with their downloaded sources. The archive
-includes pinned vcpkg recipes and patches, original source downloads, package
-versions, and the application commit. See `SOURCE.md` for rebuilding from those
-archives.
+Use the matching platform/triplet for Windows or Intel macOS. Windows packaging
+creates a directly downloadable `.exe`; it does not add an inner ZIP. macOS
+packaging creates both `dist/WideMelon.app` for development artifacts and a DMG
+for releases. Keep the vcpkg download cache: it supplies the exact dependency
+source input. Native release CI disables separate binary caching and restores
+installed libraries only together with their downloaded sources. The publish
+job combines all platform source inputs with the application source into one
+deduplicated `Complete-Source.tar.zst`. See `SOURCE.md` for rebuilding from it.
 
 Developer ID signing and notarization are optional. To enable them, provide all
 six GitHub Actions secrets: `MACOS_CERTIFICATE_P12` (base64-encoded Developer
 ID Application certificate), `MACOS_CERTIFICATE_PASSWORD`,
 `MACOS_SIGNING_IDENTITY`, `MACOS_NOTARY_KEY_ID`, `MACOS_NOTARY_ISSUER_ID`, and
 `MACOS_NOTARY_PRIVATE_KEY` (the App Store Connect API key in `.p8` format).
-Without those secrets, branch, manual, and tagged macOS runs publish an
-ad-hoc-signed bundle that may require a one-time Open confirmation. Windows
-executables remain unsigned. Native packages include licenses and source access
-instructions. Never add ROMs, BIOS/firmware dumps, saves, game assets, or
-generated build directories to a release.
+Without those secrets, branch, manual, and tagged macOS runs publish a DMG
+containing an ad-hoc-signed app that may require approval in Privacy & Security.
+Windows executables remain unsigned and can trigger SmartScreen. Never advise users to
+disable platform security checks globally. The application About dialog and
+release page provide license and source access; platform packages retain the
+applicable installed notices. Never add ROMs, BIOS/firmware dumps, saves, game
+assets, or generated build directories to a release.
 
 Automated tests cannot prove gameplay, GPU output, or behavior on every driver.
 Before publishing, smoke-test the native setup dialog, ROM selection, 4:3 and

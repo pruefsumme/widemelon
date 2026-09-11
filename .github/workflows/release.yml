@@ -52,14 +52,17 @@ jobs:
             runner: windows-2025
             preset: release-windows-x86_64
             triplet: x64-windows-static-release
+            release_asset: Windows-x86_64.exe
           - platform: macos-x86_64
             runner: macos-15-intel
             preset: release-mac-x86_64
             triplet: x64-osx-13-release
+            release_asset: macOS-x86_64.dmg
           - platform: macos-arm64
             runner: macos-15
             preset: release-mac-arm64
             triplet: arm64-osx-13-release
+            release_asset: macOS-arm64.dmg
     runs-on: ${{ matrix.runner }}
     env:
       # Cached installs are only restored together with their source downloads.
@@ -124,7 +127,7 @@ jobs:
           MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
         run: |
           if [[ -z "$MACOS_CERTIFICATE_P12" ]]; then
-            echo "No Developer ID certificate configured; this development bundle will be ad-hoc signed."
+            echo "No Developer ID certificate configured; the app will be ad-hoc signed and may require manual Gatekeeper approval."
             exit 0
           fi
           certificate_path="$RUNNER_TEMP/widemelon-signing.p12"
@@ -196,7 +199,24 @@ jobs:
         env:
           WIDEMELON_MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
         run: python scripts/package-native.py "${{ needs.version.outputs.version }}" "${{ matrix.platform }}" "${{ matrix.triplet }}"
-      - name: Notarize and staple macOS application
+      - name: Verify Windows application metadata
+        if: matrix.platform == 'windows-x86_64'
+        shell: pwsh
+        run: |
+          $path = "dist/WideMelon-${{ needs.version.outputs.version }}-Windows-x86_64.exe"
+          $application = Get-Item -LiteralPath $path
+          if ($application.VersionInfo.ProductName -ne "WideMelon") {
+            throw "Unexpected Windows product name: $($application.VersionInfo.ProductName)"
+          }
+          if ($application.VersionInfo.FileDescription -notlike "WideMelon*") {
+            throw "Unexpected Windows description: $($application.VersionInfo.FileDescription)"
+          }
+          & dumpbin /dependents $path
+          if ($LASTEXITCODE -ne 0) { throw "dumpbin failed" }
+      - name: Verify macOS disk image
+        if: startsWith(matrix.platform, 'macos-')
+        run: hdiutil verify "dist/WideMelon-${{ needs.version.outputs.version }}-${{ matrix.release_asset }}"
+      - name: Notarize and staple macOS disk image
         if: startsWith(matrix.platform, 'macos-')
         env:
           VERSION: ${{ needs.version.outputs.version }}
@@ -206,21 +226,17 @@ jobs:
           MACOS_NOTARY_PRIVATE_KEY: ${{ secrets.MACOS_NOTARY_PRIVATE_KEY }}
         run: |
           if [[ -z "$MACOS_NOTARY_KEY_ID" ]]; then
-            echo "No notarization credentials configured; retaining the development bundle."
+            echo "No notarization credentials configured; publishing the disk image without notarization."
             exit 0
           fi
           key_path="$RUNNER_TEMP/AuthKey_${MACOS_NOTARY_KEY_ID}.p8"
-          archive="dist/WideMelon-${VERSION}-${PLATFORM}.zip"
-          app="dist/WideMelon.app"
+          image="dist/WideMelon-${VERSION}-${PLATFORM/macos-/macOS-}.dmg"
           printf '%s' "$MACOS_NOTARY_PRIVATE_KEY" > "$key_path"
-          xcrun notarytool submit "$archive" \
+          xcrun notarytool submit "$image" \
             --key "$key_path" --key-id "$MACOS_NOTARY_KEY_ID" \
             --issuer "$MACOS_NOTARY_ISSUER_ID" --wait
-          xcrun stapler staple "$app"
-          codesign --verify --deep --strict "$app"
-          ditto -c -k --sequesterRsrc --keepParent "$app" "${archive}.tmp"
-          mv -f "${archive}.tmp" "$archive"
-          xcrun stapler validate "$app"
+          xcrun stapler staple "$image"
+          xcrun stapler validate "$image"
       - name: Upload macOS application bundle
         if: startsWith(matrix.platform, 'macos-')
         uses: actions/upload-artifact@v7
@@ -229,19 +245,11 @@ jobs:
           path: dist/WideMelon.app
           if-no-files-found: error
           compression-level: 0
-      - name: Upload Windows application archive
-        if: matrix.platform == 'windows-x86_64'
-        uses: actions/upload-artifact@v7
-        with:
-          name: WideMelon-${{ needs.version.outputs.version }}-${{ matrix.platform }}-application
-          path: dist/WideMelon-${{ needs.version.outputs.version }}-${{ matrix.platform }}.zip
-          if-no-files-found: error
-          compression-level: 0
-      - name: Upload release application archive
+      - name: Upload release application
         uses: actions/upload-artifact@v7
         with:
           name: WideMelon-${{ needs.version.outputs.version }}-${{ matrix.platform }}-release
-          path: dist/WideMelon-${{ needs.version.outputs.version }}-${{ matrix.platform }}.zip
+          path: dist/WideMelon-${{ needs.version.outputs.version }}-${{ matrix.release_asset }}
           if-no-files-found: error
           compression-level: 0
       - name: Upload dependency source archive
@@ -260,12 +268,20 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v6
-      - name: Download Linux package artifact
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Install source archive compressor
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends zstd
+      - name: Download Linux packages and source inputs
         uses: actions/download-artifact@v8
         with:
-          name: WideMelon-${{ needs.version.outputs.version }}-linux-x86_64
+          pattern: WideMelon-${{ needs.version.outputs.version }}-linux-x86_64-*
           path: dist
-      - name: Download native release archives
+          merge-multiple: true
+      - name: Download native release applications
         uses: actions/download-artifact@v8
         with:
           pattern: WideMelon-*-release
@@ -277,22 +293,29 @@ jobs:
           pattern: WideMelon-*-dependency-source
           path: dist
           merge-multiple: true
+      - name: Assemble complete corresponding source
+        run: python scripts/package-complete-source.py "${{ needs.version.outputs.version }}"
       - name: Verify complete asset set and publish
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           assets=(
+            "WideMelon-$VERSION-Windows-x86_64.exe"
+            "WideMelon-$VERSION-macOS-x86_64.dmg"
+            "WideMelon-$VERSION-macOS-arm64.dmg"
             "WideMelon-$VERSION-x86_64.AppImage"
-            "widemelon-$VERSION-source.tar.xz"
-            "widemelon-$VERSION-third-party-source.tar.xz"
+            "widemelon_${VERSION}-1_amd64.deb"
+            "WideMelon-$VERSION-Complete-Source.tar.zst"
           )
-          for platform in windows-x86_64 macos-x86_64 macos-arm64; do
-            assets+=("WideMelon-$VERSION-$platform.zip")
-            assets+=("widemelon-$VERSION-$platform-dependency-source.tar.gz")
+          for asset in "${assets[@]}"; do
+            test -s "dist/$asset"
           done
-          for asset in "${assets[@]}"; do test -s "dist/$asset"; done
-          (cd dist && sha256sum "${assets[@]}" > SHA256SUMS && sha256sum --check SHA256SUMS)
+          (
+            cd dist
+            sha256sum "${assets[@]}" > SHA256SUMS
+            sha256sum --check SHA256SUMS
+          )
           paths=()
           for asset in "${assets[@]}" SHA256SUMS; do paths+=("dist/$asset"); done
           gh release create "$GITHUB_REF_NAME" "${paths[@]}" \

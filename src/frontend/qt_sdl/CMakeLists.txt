@@ -1,4 +1,5 @@
 include(CMakeDependentOption)
+include(GNUInstallDirs)
 
 include(FixInterfaceIncludes)
 
@@ -269,13 +270,13 @@ endif()
 
 if (UNIX AND NOT APPLE)
     foreach(SIZE 16 32 48 64 128 256)
-        install(FILES ${CMAKE_SOURCE_DIR}/res/icon/melon_${SIZE}x${SIZE}.png
-            DESTINATION ${CMAKE_INSTALL_PREFIX}/share/icons/hicolor/${SIZE}x${SIZE}/apps
+        install(FILES ${CMAKE_SOURCE_DIR}/assets/icons/widemelon-${SIZE}.png
+            DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/${SIZE}x${SIZE}/apps
             RENAME io.github.pruefsumme.WideMelon.png)
     endforeach()
 
-    install(FILES io.github.pruefsumme.WideMelon.desktop DESTINATION ${CMAKE_INSTALL_PREFIX}/share/applications)
-    install(FILES io.github.pruefsumme.WideMelon.metainfo.xml DESTINATION ${CMAKE_INSTALL_PREFIX}/share/metainfo)
+    install(FILES io.github.pruefsumme.WideMelon.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+    install(FILES io.github.pruefsumme.WideMelon.metainfo.xml DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo)
 endif()
 
 if (APPLE)
@@ -283,7 +284,7 @@ if (APPLE)
 elseif (WIN32)
     set(WIDEMELON_DOC_DIR doc)
 else()
-    set(WIDEMELON_DOC_DIR share/doc/widemelon)
+    set(WIDEMELON_DOC_DIR ${CMAKE_INSTALL_DATADIR}/doc/widemelon)
 endif()
 
     install(FILES
@@ -315,7 +316,7 @@ endif()
         DESTINATION ${WIDEMELON_DOC_DIR}/licenses)
 
 if (UNIX AND NOT APPLE)
-    install(TARGETS melonDS BUNDLE DESTINATION ${CMAKE_BINARY_DIR} RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
+    install(TARGETS melonDS BUNDLE DESTINATION ${CMAKE_BINARY_DIR} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
     if (NOT USE_QT6)
         set_target_properties(melonDS PROPERTIES

@@ -15,16 +15,19 @@ The first WideMelon release for Windows, macOS, and Linux.
 
 | System | Download | Run |
 | --- | --- | --- |
-| Windows 10/11, x64 | `WideMelon-1.0.0-windows-x86_64.zip` | Extract the whole folder, then open `widemelon.exe`. |
-| macOS 13+, Apple Silicon | `WideMelon-1.0.0-macos-arm64.zip` | Extract and move `WideMelon.app` to Applications. |
-| macOS 13+, Intel | `WideMelon-1.0.0-macos-x86_64.zip` | Extract and move `WideMelon.app` to Applications. |
+| Windows 10/11, x64 | `WideMelon-1.0.0-Windows-x86_64.exe` | Download and open the executable. |
+| macOS 13+, Apple Silicon | `WideMelon-1.0.0-macOS-arm64.dmg` | Open the image and drag WideMelon to Applications. |
+| macOS 13+, Intel | `WideMelon-1.0.0-macOS-x86_64.dmg` | Open the image and drag WideMelon to Applications. |
+| Ubuntu 22.04+, x64 | `widemelon_1.0.0-1_amd64.deb` | Install with your software manager or `apt install ./widemelon_1.0.0-1_amd64.deb`. |
 | Linux x64, Ubuntu 22.04 or newer equivalent | `WideMelon-1.0.0-x86_64.AppImage` | Mark executable and open it. |
 
-The Windows build is unsigned. macOS apps are ad-hoc signed unless optional
-Developer ID credentials are configured, so macOS may require a one-time
-approval in Privacy & Security. Only approve a download obtained from this
-repository. Linux needs an OpenGL-capable graphics driver and FUSE 2, or can
-run the image with `--appimage-extract-and-run`.
+The Windows build is unsigned, so SmartScreen can show an unknown-publisher
+warning. macOS apps are ad-hoc signed unless optional Developer ID credentials
+are configured, so macOS may require approval in Privacy & Security. Never
+disable SmartScreen or Gatekeeper globally. Only approve a download obtained
+from this repository after verifying its SHA-256 checksum. Linux needs an
+OpenGL-capable graphics driver; AppImage users also need FUSE 2 or can run the
+image with `--appimage-extract-and-run`.
 
 ## Compatibility and limitations
 
@@ -43,11 +46,12 @@ compatibility or every graphics driver. Supply your own legally obtained games.
 
 ## Source and verification
 
-`SHA256SUMS` covers every downloadable binary and source archive. The application
-source archive includes pinned FAAD2 and ENet. Linux's third-party source archive
-and each native platform's dependency-source archive contain the matching
-bundled dependency sources and build metadata. See `SOURCE.md` and `BUILD.md`
-in the source archive for rebuilding instructions.
+`SHA256SUMS` covers every downloadable binary and the single
+`WideMelon-1.0.0-Complete-Source.tar.zst` archive. Players do not need the source
+download. It contains the exact application source, build scripts, pinned FAAD2
+and ENet source, and the dependency sources and build metadata matching every
+published platform binary. See `SOURCE.md` and `BUILD.md` inside it for rebuild
+instructions.
 
 WideMelon is GPL-3.0-or-later, based on melonDS 1.1, and is maintained independently
 from the melonDS project, Nintendo, Game Freak, and The Pokémon Company.

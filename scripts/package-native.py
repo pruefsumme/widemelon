@@ -14,7 +14,6 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
-import zipfile
 
 
 def run(*args, **kwargs):
@@ -70,19 +69,18 @@ def main():
         (docs / "build-info.json").write_text(json.dumps(provenance, indent=2) + "\n")
         shutil.copy2(installed / "vcpkg/status", docs / "dependency-versions.txt")
         if mac:
-            # Keep a plain app bundle in dist as well as the release archive.
-            # This lets Actions expose a directly usable WideMelon.app instead
-            # of making users unpack an artifact containing two unrelated
-            # archives.
+            # Keep a plain app bundle for development artifacts and put the
+            # end-user application in a directly downloadable disk image.
             application = dist / "WideMelon.app"
-            archive_path = dist / f"{name}.zip"
+            release_name = f"WideMelon-{args.version}-{args.platform.replace('macos-', 'macOS-')}.dmg"
+            image_path = dist / release_name
             if application.exists():
                 if application.is_dir() and not application.is_symlink():
                     shutil.rmtree(application)
                 else:
                     application.unlink()
-            if archive_path.exists():
-                archive_path.unlink()
+            if image_path.exists():
+                image_path.unlink()
             shutil.copytree(app, application, symlinks=True)
             app = application
 
@@ -112,12 +110,24 @@ def main():
             sign_command.extend(["--sign", signing_identity, str(app)])
             run(*sign_command)
             run("codesign", "--verify", "--deep", "--strict", str(app))
-            run("ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", str(app), str(archive_path))
+
+            image_root = work / "dmg-root"
+            image_root.mkdir()
+            shutil.copytree(app, image_root / app.name, symlinks=True)
+            (image_root / "Applications").symlink_to("/Applications")
+            run("hdiutil", "create", "-volname", f"WideMelon {args.version}",
+                "-srcfolder", str(image_root), "-ov", "-format", "UDZO", str(image_path))
+            if signing_identity != "-":
+                run("codesign", "--force", "--timestamp", "--sign", signing_identity, str(image_path))
+                run("codesign", "--verify", "--strict", str(image_path))
         else:
-            with zipfile.ZipFile(dist / f"{name}.zip", "w", zipfile.ZIP_DEFLATED) as archive:
-                for file in sorted(stage.rglob("*")):
-                    if file.is_file():
-                        archive.write(file, Path(name) / file.relative_to(stage))
+            executable = stage / "widemelon.exe"
+            if not executable.is_file():
+                raise RuntimeError("Installed Windows package does not contain widemelon.exe")
+            release_executable = dist / f"WideMelon-{args.version}-Windows-x86_64.exe"
+            if release_executable.exists():
+                release_executable.unlink()
+            shutil.copy2(executable, release_executable)
 
         # Keep the actual downloaded inputs, pinned port recipes/patches and
         # resolved package metadata, including for statically linked libraries.
