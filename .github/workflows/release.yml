@@ -10,6 +10,11 @@ on:
         required: true
         type: boolean
         default: false
+      publish_aur:
+        description: Publish AUR recipes for an existing stable release
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -31,22 +36,31 @@ jobs:
         shell: bash
         env:
           PUBLISH_RELEASE: ${{ inputs.publish_release }}
+          PUBLISH_AUR: ${{ inputs.publish_aur }}
         run: |
           set -euo pipefail
           version=$(sed -n 's/^set(WIDEMELON_VERSION "\([0-9.]*\)")/\1/p' CMakeLists.txt)
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          if [[ "$PUBLISH_RELEASE" == true && "$PUBLISH_AUR" == true ]]; then
+            echo "publish_release and publish_aur are mutually exclusive." >&2
+            exit 1
+          fi
           if [[ "$PUBLISH_RELEASE" == true ]]; then
             [[ "$GITHUB_REF" == refs/heads/main ]]
             if git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null; then
               echo "Tag v$version already exists; refusing to move or reuse it." >&2
               exit 1
             fi
+          elif [[ "$PUBLISH_AUR" == true ]]; then
+            [[ "$GITHUB_REF" == refs/heads/main ]]
+            git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null
           else
             version="$version-dev.$GITHUB_RUN_NUMBER"
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
   linux:
+    if: ${{ !inputs.publish_aur }}
     needs: version
     uses: ./.github/workflows/package-linux.yml
     with:
@@ -54,6 +68,7 @@ jobs:
 
   native:
     name: Package ${{ matrix.platform }}
+    if: ${{ !inputs.publish_aur }}
     needs: version
     timeout-minutes: 180
     strategy:
@@ -276,43 +291,55 @@ jobs:
           retention-days: 1
 
   publish:
-    if: inputs.publish_release
+    if: |
+      always() &&
+      (inputs.publish_release || inputs.publish_aur) &&
+      needs.version.result == 'success' &&
+      (inputs.publish_aur || (needs.linux.result == 'success' && needs.native.result == 'success'))
     needs: [version, linux, native]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v6
+        if: inputs.publish_release
         with:
           fetch-depth: 0
       - uses: actions/setup-python@v6
+        if: inputs.publish_release
         with:
           python-version: "3.13"
       - name: Install source archive compressor
+        if: inputs.publish_release
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends zstd
       - name: Download Linux packages and source inputs
+        if: inputs.publish_release
         uses: actions/download-artifact@v8
         with:
           pattern: WideMelon-${{ needs.version.outputs.version }}-linux-x86_64-*
           path: dist
           merge-multiple: true
       - name: Download native release applications
+        if: inputs.publish_release
         uses: actions/download-artifact@v8
         with:
           pattern: WideMelon-*-release
           path: dist
           merge-multiple: true
       - name: Download native dependency sources
+        if: inputs.publish_release
         uses: actions/download-artifact@v8
         with:
           pattern: WideMelon-*-dependency-source
           path: dist
           merge-multiple: true
       - name: Assemble complete corresponding source
+        if: inputs.publish_release
         run: python scripts/package-complete-source.py "${{ needs.version.outputs.version }}"
       - name: Verify complete asset set and publish
+        if: inputs.publish_release
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.version.outputs.version }}
@@ -348,10 +375,17 @@ jobs:
           git push origin "$tag"
           gh release create "$tag" "${paths[@]}" \
             --verify-tag --title "WideMelon $VERSION" --notes-file RELEASE_NOTES.md --latest
+      - name: Reuse existing stable release for AUR publication
+        if: inputs.publish_aur
+        run: echo "Using the existing v${{ needs.version.outputs.version }} release for AUR publication."
 
   aur:
     name: Publish AUR packages
-    if: inputs.publish_release
+    if: |
+      always() &&
+      (inputs.publish_release || inputs.publish_aur) &&
+      needs.version.result == 'success' &&
+      needs.publish.result == 'success'
     needs: [version, publish]
     runs-on: ubuntu-24.04
     permissions:
@@ -366,11 +400,15 @@ jobs:
       - name: Verify stable release and download immutable inputs
         env:
           GH_TOKEN: ${{ github.token }}
+          AUR_ONLY: ${{ inputs.publish_aur }}
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
           [[ "$GITHUB_REF" == refs/heads/main ]]
-          [[ "$(git rev-parse "v$VERSION^{commit}")" == "$GITHUB_SHA" ]]
+          release_commit=$(git rev-parse "v$VERSION^{commit}")
+          if [[ "$AUR_ONLY" != true ]]; then
+            [[ "$release_commit" == "$GITHUB_SHA" ]]
+          fi
           release=$(gh release view "v$VERSION" --json isPrerelease,publishedAt --jq \
             '[.isPrerelease, .publishedAt != null] | @tsv')
           [[ "$release" == $'false\ttrue' ]]
@@ -411,6 +449,7 @@ jobs:
           for package in widemelon widemelon-git widemelon-bin; do
             docker run --rm \
               -e PACKAGE_NAME="$package" \
+              -e CARCH=x86_64 \
               -v "$GITHUB_WORKSPACE:/workspace" -w "/workspace/build/aur/$package" \
               archlinux:base-devel bash -euxo pipefail -c '
                 source PKGBUILD
