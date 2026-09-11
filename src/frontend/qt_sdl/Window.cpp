@@ -905,6 +905,7 @@ void MainWindow::createHomePanel()
 
     homePanel = new QWidget(panel);
     homePanel->setObjectName("widemelonHome");
+    homePanel->setAttribute(Qt::WA_NativeWindow, true);
     homePanel->setAttribute(Qt::WA_StyledBackground, true);
     homePanel->setStyleSheet(R"(
         QWidget#widemelonHome {

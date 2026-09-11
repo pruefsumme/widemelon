@@ -54,7 +54,7 @@ Development builds from the newest commit are available from the
 Download and install the current package:
 
 ```sh
-VERSION=1.0.1
+VERSION=1.0.2
 wget "https://github.com/pruefsumme/widemelon/releases/download/v${VERSION}/widemelon_${VERSION}-1_amd64.deb"
 sudo apt install "./widemelon_${VERSION}-1_amd64.deb"
 ```
@@ -67,7 +67,7 @@ WideMelon will appear in your application menu and can also be started with
 The AppImage works on most x86_64 Linux distributions:
 
 ```sh
-VERSION=1.0.1
+VERSION=1.0.2
 wget "https://github.com/pruefsumme/widemelon/releases/download/v${VERSION}/WideMelon-${VERSION}-x86_64.AppImage"
 chmod +x "WideMelon-${VERSION}-x86_64.AppImage"
 ./"WideMelon-${VERSION}-x86_64.AppImage"
