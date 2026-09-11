@@ -5,7 +5,6 @@ name: Release
 on:
   workflow_dispatch:
   push:
-    branches: ["feat/v1-release"]
     tags: ["v*"]
 
 permissions:
@@ -320,3 +319,130 @@ jobs:
           for asset in "${assets[@]}" SHA256SUMS; do paths+=("dist/$asset"); done
           gh release create "$GITHUB_REF_NAME" "${paths[@]}" \
             --verify-tag --title "WideMelon $VERSION" --notes-file RELEASE_NOTES.md --latest
+
+  aur:
+    name: Publish AUR packages
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [version, publish]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    concurrency:
+      group: widemelon-aur-publication
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Verify stable release and download immutable inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "v$VERSION" ]]
+          [[ "$(git rev-parse "v$VERSION^{commit}")" == "$GITHUB_SHA" ]]
+          release=$(gh release view "$GITHUB_REF_NAME" --json isPrerelease,publishedAt --jq \
+            '[.isPrerelease, .publishedAt != null] | @tsv')
+          [[ "$release" == $'false\ttrue' ]]
+
+          mkdir -p dist
+          gh release download "$GITHUB_REF_NAME" --dir dist \
+            --pattern "WideMelon-$VERSION-x86_64.AppImage" --pattern SHA256SUMS
+          appimage_sum=$(grep -F "  WideMelon-$VERSION-x86_64.AppImage" dist/SHA256SUMS)
+          [[ -n "$appimage_sum" ]]
+          (cd dist && printf '%s\n' "$appimage_sum" | sha256sum --check -)
+
+          curl --fail --location --retry 3 \
+            "https://github.com/pruefsumme/widemelon/archive/refs/tags/v$VERSION.tar.gz" \
+            --output "dist/widemelon-$VERSION.tar.gz"
+          tar -tzf "dist/widemelon-$VERSION.tar.gz" >/dev/null
+      - name: Render recipes and generate .SRCINFO on Arch
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          mkdir -p build/aur
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/workspace" -w /workspace \
+            archlinux:base-devel bash -euxo pipefail -c '
+              pacman -Syu --noconfirm --needed git python
+              useradd --create-home builder
+              chown -R builder:builder build/aur
+              runuser -u builder -- git config --global --add safe.directory /workspace
+              runuser -u builder -- python scripts/generate-aur.py "$1" \
+                --source-archive "dist/widemelon-$1.tar.gz" \
+                --appimage "dist/WideMelon-$1-x86_64.AppImage" \
+                --output build/aur
+            ' bash "$VERSION"
+      - name: Clean-build and inspect every recipe
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          for package in widemelon widemelon-git widemelon-bin; do
+            docker run --rm \
+              -v "$GITHUB_WORKSPACE:/workspace" -w "/workspace/build/aur/$package" \
+              archlinux:base-devel bash -euxo pipefail -c '
+                source PKGBUILD
+                pacman -Syu --noconfirm --needed namcap desktop-file-utils appstream pax-utils alsa-lib \
+                  xorg-server-xvfb xorg-xauth \
+                  "${depends[@]}" "${makedepends[@]}"
+                useradd --create-home builder
+                chown -R builder:builder .
+                runuser -u builder -- makepkg --cleanbuild --noconfirm
+                packages=(./*.pkg.tar.zst)
+                main_packages=()
+                for archive in "${packages[@]}"; do
+                  [[ "$archive" == *-debug-* ]] || main_packages+=("$archive")
+                done
+                (( ${#main_packages[@]} == 1 ))
+                namcap PKGBUILD "${packages[@]}"
+                pacman -U --noconfirm "${main_packages[0]}"
+                desktop-file-validate /usr/share/applications/io.github.pruefsumme.WideMelon.desktop
+                appstreamcli validate --no-net /usr/share/metainfo/io.github.pruefsumme.WideMelon.metainfo.xml
+                if [[ "$package" == widemelon-bin ]]; then
+                  scanelf -n /opt/widemelon/WideMelon.AppImage
+                else
+                  ldd /usr/bin/widemelon
+                fi
+                runuser -u builder -- xvfb-run -a env APPIMAGE_EXTRACT_AND_RUN=1 widemelon --help
+              '
+          done
+      - name: Configure pinned AUR SSH identity
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          [[ -n "$AUR_SSH_PRIVATE_KEY" ]]
+          install -d -m 700 "$HOME/.ssh"
+          install -m 600 /dev/null "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+
+          expected='SHA256:RFzBCUItH9LZS0cKB5UE6ceAYhBD5C8GeOBip8Z11+4'
+          host_key=$(ssh-keyscan -t ed25519 aur.archlinux.org 2>/dev/null)
+          fingerprint=$(printf '%s\n' "$host_key" | ssh-keygen -lf - | awk '{print $2}')
+          [[ "$fingerprint" == "$expected" ]]
+          printf '%s\n' "$host_key" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Publish changed AUR repositories sequentially
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          GIT_SSH_COMMAND: ssh -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes
+        run: |
+          set -euo pipefail
+          git config --global user.name 'pruefsumme'
+          git config --global user.email '194605914+pruefsumme@users.noreply.github.com'
+          mkdir -p build/aur-repositories
+          for package in widemelon widemelon-git widemelon-bin; do
+            repository="build/aur-repositories/$package"
+            git -c init.defaultBranch=master clone \
+              "ssh://aur@aur.archlinux.org/$package.git" "$repository"
+            cp "build/aur/$package/PKGBUILD" "build/aur/$package/.SRCINFO" "$repository/"
+            git -C "$repository" add PKGBUILD .SRCINFO
+            if git -C "$repository" diff --cached --quiet; then
+              echo "$package is already current"
+              continue
+            fi
+            git -C "$repository" commit -m "Update to $VERSION"
+            git -C "$repository" push origin HEAD:master
+          done

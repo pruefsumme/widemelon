@@ -27,6 +27,8 @@ Get Windows, macOS, and Linux builds from the
   Applications.
 - Ubuntu/Debian: install the `amd64.deb` package.
 - Other x64 Linux distributions: mark the AppImage executable and open it.
+- Arch Linux: install `widemelon`, `widemelon-git`, or `widemelon-bin` from
+  the AUR. The variants conflict and all launch as `widemelon`.
 
 Windows builds are unsigned and can show a SmartScreen warning. macOS builds
 are ad-hoc signed unless stated otherwise and may need approval in
