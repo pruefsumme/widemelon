@@ -138,6 +138,8 @@ view. Menus, battles, videos, and special effects can remain 4:3 by design. The
 expanded profiles require the classic OpenGL renderer; native 4:3 remains
 available as the compatibility profile.
 
+> **Compatibility note:** Widescreen support is game-dependent. It may not work correctly or provide much benefit in every game, because results depend on how that game renders its 3D scene.
+
 ## Build from source
 
 WideMelon is a C++17 and CMake project. The complete source, pinned dependencies,
@@ -157,9 +159,6 @@ WideMelon is based on [melonDS](https://github.com/melonDS-emu/melonDS) and is
 maintained as an independent project. Thanks to the melonDS contributors and
 everyone testing WideMelon, reporting compatibility results, and improving the
 experience.
-
-WideMelon is not affiliated with Nintendo, Game Freak, The Pokémon Company, or
-the melonDS project.
 
 ## License
 
