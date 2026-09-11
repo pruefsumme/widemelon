@@ -1,0 +1,448 @@
+# Copyright (C) 2026 WideMelon contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+name: Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+      - id: version
+        shell: bash
+        run: |
+          version=$(sed -n 's/^set(WIDEMELON_VERSION "\([0-9.]*\)")/\1/p' CMakeLists.txt)
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            [[ "$GITHUB_REF_NAME" == "v$version" ]]
+          else
+            version="$version-dev.$GITHUB_RUN_NUMBER"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  linux:
+    needs: version
+    uses: ./.github/workflows/package-linux.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+
+  native:
+    name: Package ${{ matrix.platform }}
+    needs: version
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-x86_64
+            runner: windows-2025
+            preset: release-windows-x86_64
+            triplet: x64-windows-static-release
+            release_asset: Windows-x86_64.exe
+          - platform: macos-x86_64
+            runner: macos-15-intel
+            preset: release-mac-x86_64
+            triplet: x64-osx-13-release
+            release_asset: macOS-x86_64.dmg
+          - platform: macos-arm64
+            runner: macos-15
+            preset: release-mac-arm64
+            triplet: arm64-osx-13-release
+            release_asset: macOS-arm64.dmg
+    runs-on: ${{ matrix.runner }}
+    env:
+      # Cached installs are only restored together with their source downloads.
+      VCPKG_BINARY_SOURCES: clear
+      VCPKG_MAX_CONCURRENCY: 3
+      MELONDS_GIT_BRANCH: ${{ github.ref }}
+      MELONDS_GIT_HASH: ${{ github.sha }}
+      MELONDS_BUILD_PROVIDER: GitHub Actions
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - name: Set up Visual Studio
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+      - name: Install macOS build tools
+        if: runner.os == 'macOS'
+        run: brew install autoconf automake autoconf-archive libtool ninja pkg-config
+      - name: Validate macOS distribution credentials
+        if: startsWith(matrix.platform, 'macos-')
+        env:
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          MACOS_NOTARY_PRIVATE_KEY: ${{ secrets.MACOS_NOTARY_PRIVATE_KEY }}
+        run: |
+          signing_count=0
+          [[ -n "$MACOS_CERTIFICATE_P12" ]] && signing_count=$((signing_count + 1))
+          [[ -n "$MACOS_CERTIFICATE_PASSWORD" ]] && signing_count=$((signing_count + 1))
+          [[ -n "$MACOS_SIGNING_IDENTITY" ]] && signing_count=$((signing_count + 1))
+          if (( signing_count != 0 && signing_count != 3 )); then
+            echo "Set all three macOS signing secrets, or leave all three unset." >&2
+            exit 1
+          fi
+
+          notary_count=0
+          [[ -n "$MACOS_NOTARY_KEY_ID" ]] && notary_count=$((notary_count + 1))
+          [[ -n "$MACOS_NOTARY_ISSUER_ID" ]] && notary_count=$((notary_count + 1))
+          [[ -n "$MACOS_NOTARY_PRIVATE_KEY" ]] && notary_count=$((notary_count + 1))
+          if (( notary_count != 0 && notary_count != 3 )); then
+            echo "Set all three macOS notarization secrets, or leave all three unset." >&2
+            exit 1
+          fi
+          if (( notary_count != 0 && signing_count != 3 )); then
+            echo "Notarization credentials require all three macOS signing secrets." >&2
+            exit 1
+          fi
+
+      - name: Import macOS Developer ID certificate
+        if: startsWith(matrix.platform, 'macos-')
+        env:
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          if [[ -z "$MACOS_CERTIFICATE_P12" ]]; then
+            echo "No Developer ID certificate configured; the app will be ad-hoc signed and may require manual Gatekeeper approval."
+            exit 0
+          fi
+          certificate_path="$RUNNER_TEMP/widemelon-signing.p12"
+          keychain_path="$RUNNER_TEMP/widemelon-signing.keychain-db"
+          keychain_password=$(uuidgen)
+          printf '%s' "$MACOS_CERTIFICATE_P12" | base64 -D > "$certificate_path"
+          security create-keychain -p "$keychain_password" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$keychain_password" "$keychain_path"
+          security import "$certificate_path" -P "$MACOS_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 "$keychain_path"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$keychain_password" "$keychain_path"
+          security list-keychains -d user -s "$keychain_path"
+          security default-keychain -s "$keychain_path"
+      - name: Check out pinned vcpkg
+        uses: actions/checkout@v6
+        with:
+          repository: microsoft/vcpkg
+          ref: 9b965a116838c6cdcd36bca60d1b81b030c8ab8d
+          path: .deps/vcpkg
+      - name: Restore dependencies and sources
+        uses: actions/cache/restore@v4
+        id: deps
+        with:
+          path: |
+            .deps/vcpkg/downloads
+            build/native/vcpkg_installed
+          key: native-${{ matrix.runner }}-${{ matrix.triplet }}-${{ hashFiles('vcpkg.json', 'cmake/overlay-ports/**', 'cmake/overlay-triplets/**') }}
+          restore-keys: native-${{ matrix.runner }}-${{ matrix.triplet }}-
+      - name: Configure
+        run: |
+          args=()
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            args+=(-DCMAKE_OSX_DEPLOYMENT_TARGET=13.0)
+          fi
+          cmake --preset "${{ matrix.preset }}" -B build/native \
+            -DVCPKG_ROOT="$GITHUB_WORKSPACE/.deps/vcpkg" \
+            -DUSE_RECOMMENDED_TRIPLETS=OFF \
+            -DVCPKG_TARGET_TRIPLET="${{ matrix.triplet }}" \
+            -DVCPKG_HOST_TRIPLET="${{ matrix.triplet }}" \
+            -DENABLE_LTO_RELEASE=OFF -DMELONDS_EMBED_BUILD_INFO=ON "${args[@]}"
+      - name: Save dependencies and sources
+        if: always() && steps.deps.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .deps/vcpkg/downloads
+            build/native/vcpkg_installed
+          key: ${{ steps.deps.outputs.cache-primary-key }}
+      - name: Build application
+        run: cmake --build build/native --parallel 3
+      - name: Build and run tests
+        run: |
+          args=()
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            args+=(-DCMAKE_CXX_COMPILER=clang++ -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded)
+          else
+            args+=(-DCMAKE_OSX_DEPLOYMENT_TARGET=13.0)
+          fi
+          cmake -S tests -B build/tests -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DUSE_QT6=ON -DVCPKG_MANIFEST_MODE=OFF \
+            -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/.deps/vcpkg/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_INSTALLED_DIR="$GITHUB_WORKSPACE/build/native/vcpkg_installed" \
+            -DVCPKG_TARGET_TRIPLET="${{ matrix.triplet }}" "${args[@]}"
+          cmake --build build/tests --parallel 3
+          ctest --test-dir build/tests --output-on-failure
+      - name: Package application and dependency sources
+        env:
+          WIDEMELON_MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+        run: python scripts/package-native.py "${{ needs.version.outputs.version }}" "${{ matrix.platform }}" "${{ matrix.triplet }}"
+      - name: Verify Windows application metadata
+        if: matrix.platform == 'windows-x86_64'
+        shell: pwsh
+        run: |
+          $path = "dist/WideMelon-${{ needs.version.outputs.version }}-Windows-x86_64.exe"
+          $application = Get-Item -LiteralPath $path
+          if ($application.VersionInfo.ProductName -ne "WideMelon") {
+            throw "Unexpected Windows product name: $($application.VersionInfo.ProductName)"
+          }
+          if ($application.VersionInfo.FileDescription -notlike "WideMelon*") {
+            throw "Unexpected Windows description: $($application.VersionInfo.FileDescription)"
+          }
+          & dumpbin /dependents $path
+          if ($LASTEXITCODE -ne 0) { throw "dumpbin failed" }
+      - name: Verify macOS disk image
+        if: startsWith(matrix.platform, 'macos-')
+        run: hdiutil verify "dist/WideMelon-${{ needs.version.outputs.version }}-${{ matrix.release_asset }}"
+      - name: Notarize and staple macOS disk image
+        if: startsWith(matrix.platform, 'macos-')
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          PLATFORM: ${{ matrix.platform }}
+          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          MACOS_NOTARY_PRIVATE_KEY: ${{ secrets.MACOS_NOTARY_PRIVATE_KEY }}
+        run: |
+          if [[ -z "$MACOS_NOTARY_KEY_ID" ]]; then
+            echo "No notarization credentials configured; publishing the disk image without notarization."
+            exit 0
+          fi
+          key_path="$RUNNER_TEMP/AuthKey_${MACOS_NOTARY_KEY_ID}.p8"
+          image="dist/WideMelon-${VERSION}-${PLATFORM/macos-/macOS-}.dmg"
+          printf '%s' "$MACOS_NOTARY_PRIVATE_KEY" > "$key_path"
+          xcrun notarytool submit "$image" \
+            --key "$key_path" --key-id "$MACOS_NOTARY_KEY_ID" \
+            --issuer "$MACOS_NOTARY_ISSUER_ID" --wait
+          xcrun stapler staple "$image"
+          xcrun stapler validate "$image"
+      - name: Upload macOS application bundle
+        if: startsWith(matrix.platform, 'macos-')
+        uses: actions/upload-artifact@v7
+        with:
+          name: WideMelon-${{ needs.version.outputs.version }}-${{ matrix.platform }}-application
+          path: dist/WideMelon.app
+          if-no-files-found: error
+          compression-level: 0
+      - name: Upload release application
+        uses: actions/upload-artifact@v7
+        with:
+          name: WideMelon-${{ needs.version.outputs.version }}-${{ matrix.platform }}-release
+          path: dist/WideMelon-${{ needs.version.outputs.version }}-${{ matrix.release_asset }}
+          if-no-files-found: error
+          compression-level: 0
+      - name: Upload dependency source archive
+        uses: actions/upload-artifact@v7
+        with:
+          name: WideMelon-${{ needs.version.outputs.version }}-${{ matrix.platform }}-dependency-source
+          path: dist/widemelon-${{ needs.version.outputs.version }}-${{ matrix.platform }}-dependency-source.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [version, linux, native]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Install source archive compressor
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends zstd
+      - name: Download Linux packages and source inputs
+        uses: actions/download-artifact@v8
+        with:
+          pattern: WideMelon-${{ needs.version.outputs.version }}-linux-x86_64-*
+          path: dist
+          merge-multiple: true
+      - name: Download native release applications
+        uses: actions/download-artifact@v8
+        with:
+          pattern: WideMelon-*-release
+          path: dist
+          merge-multiple: true
+      - name: Download native dependency sources
+        uses: actions/download-artifact@v8
+        with:
+          pattern: WideMelon-*-dependency-source
+          path: dist
+          merge-multiple: true
+      - name: Assemble complete corresponding source
+        run: python scripts/package-complete-source.py "${{ needs.version.outputs.version }}"
+      - name: Verify complete asset set and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          assets=(
+            "WideMelon-$VERSION-Windows-x86_64.exe"
+            "WideMelon-$VERSION-macOS-x86_64.dmg"
+            "WideMelon-$VERSION-macOS-arm64.dmg"
+            "WideMelon-$VERSION-x86_64.AppImage"
+            "widemelon_${VERSION}-1_amd64.deb"
+            "WideMelon-$VERSION-Complete-Source.tar.zst"
+          )
+          for asset in "${assets[@]}"; do
+            test -s "dist/$asset"
+          done
+          (
+            cd dist
+            sha256sum "${assets[@]}" > SHA256SUMS
+            sha256sum --check SHA256SUMS
+          )
+          paths=()
+          for asset in "${assets[@]}" SHA256SUMS; do paths+=("dist/$asset"); done
+          gh release create "$GITHUB_REF_NAME" "${paths[@]}" \
+            --verify-tag --title "WideMelon $VERSION" --notes-file RELEASE_NOTES.md --latest
+
+  aur:
+    name: Publish AUR packages
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [version, publish]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    concurrency:
+      group: widemelon-aur-publication
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Verify stable release and download immutable inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "v$VERSION" ]]
+          [[ "$(git rev-parse "v$VERSION^{commit}")" == "$GITHUB_SHA" ]]
+          release=$(gh release view "$GITHUB_REF_NAME" --json isPrerelease,publishedAt --jq \
+            '[.isPrerelease, .publishedAt != null] | @tsv')
+          [[ "$release" == $'false\ttrue' ]]
+
+          mkdir -p dist
+          gh release download "$GITHUB_REF_NAME" --dir dist \
+            --pattern "WideMelon-$VERSION-x86_64.AppImage" --pattern SHA256SUMS
+          appimage_sum=$(grep -F "  WideMelon-$VERSION-x86_64.AppImage" dist/SHA256SUMS)
+          [[ -n "$appimage_sum" ]]
+          (cd dist && printf '%s\n' "$appimage_sum" | sha256sum --check -)
+
+          curl --fail --location --retry 3 \
+            "https://github.com/pruefsumme/widemelon/archive/refs/tags/v$VERSION.tar.gz" \
+            --output "dist/widemelon-$VERSION.tar.gz"
+          tar -tzf "dist/widemelon-$VERSION.tar.gz" >/dev/null
+      - name: Render recipes and generate .SRCINFO on Arch
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          mkdir -p build/aur
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/workspace" -w /workspace \
+            archlinux:base-devel bash -euxo pipefail -c '
+              pacman -Syu --noconfirm --needed git python
+              useradd --create-home builder
+              chown -R builder:builder build/aur
+              runuser -u builder -- git config --global --add safe.directory /workspace
+              runuser -u builder -- python scripts/generate-aur.py "$1" \
+                --source-archive "dist/widemelon-$1.tar.gz" \
+                --appimage "dist/WideMelon-$1-x86_64.AppImage" \
+                --output build/aur
+            ' bash "$VERSION"
+      - name: Clean-build and inspect every recipe
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          for package in widemelon widemelon-git widemelon-bin; do
+            docker run --rm \
+              -v "$GITHUB_WORKSPACE:/workspace" -w "/workspace/build/aur/$package" \
+              archlinux:base-devel bash -euxo pipefail -c '
+                source PKGBUILD
+                pacman -Syu --noconfirm --needed namcap desktop-file-utils appstream pax-utils alsa-lib \
+                  xorg-server-xvfb xorg-xauth \
+                  "${depends[@]}" "${makedepends[@]}"
+                useradd --create-home builder
+                chown -R builder:builder .
+                runuser -u builder -- makepkg --cleanbuild --noconfirm
+                packages=(./*.pkg.tar.zst)
+                main_packages=()
+                for archive in "${packages[@]}"; do
+                  [[ "$archive" == *-debug-* ]] || main_packages+=("$archive")
+                done
+                (( ${#main_packages[@]} == 1 ))
+                namcap PKGBUILD "${packages[@]}"
+                pacman -U --noconfirm "${main_packages[0]}"
+                desktop-file-validate /usr/share/applications/io.github.pruefsumme.WideMelon.desktop
+                appstreamcli validate --no-net /usr/share/metainfo/io.github.pruefsumme.WideMelon.metainfo.xml
+                if [[ "$package" == widemelon-bin ]]; then
+                  scanelf -n /opt/widemelon/WideMelon.AppImage
+                else
+                  ldd /usr/bin/widemelon
+                fi
+                runuser -u builder -- xvfb-run -a env APPIMAGE_EXTRACT_AND_RUN=1 widemelon --help
+              '
+          done
+      - name: Configure pinned AUR SSH identity
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          [[ -n "$AUR_SSH_PRIVATE_KEY" ]]
+          install -d -m 700 "$HOME/.ssh"
+          install -m 600 /dev/null "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+
+          expected='SHA256:RFzBCUItH9LZS0cKB5UE6ceAYhBD5C8GeOBip8Z11+4'
+          host_key=$(ssh-keyscan -t ed25519 aur.archlinux.org 2>/dev/null)
+          fingerprint=$(printf '%s\n' "$host_key" | ssh-keygen -lf - | awk '{print $2}')
+          [[ "$fingerprint" == "$expected" ]]
+          printf '%s\n' "$host_key" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+      - name: Publish changed AUR repositories sequentially
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          GIT_SSH_COMMAND: ssh -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes
+        run: |
+          set -euo pipefail
+          git config --global user.name 'pruefsumme'
+          git config --global user.email '194605914+pruefsumme@users.noreply.github.com'
+          mkdir -p build/aur-repositories
+          for package in widemelon widemelon-git widemelon-bin; do
+            repository="build/aur-repositories/$package"
+            git -c init.defaultBranch=master clone \
+              "ssh://aur@aur.archlinux.org/$package.git" "$repository"
+            cp "build/aur/$package/PKGBUILD" "build/aur/$package/.SRCINFO" "$repository/"
+            git -C "$repository" add PKGBUILD .SRCINFO
+            if git -C "$repository" diff --cached --quiet; then
+              echo "$package is already current"
+              continue
+            fi
+            git -C "$repository" commit -m "Update to $VERSION"
+            git -C "$repository" push origin HEAD:master
+          done

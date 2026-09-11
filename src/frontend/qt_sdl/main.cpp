@@ -323,7 +323,7 @@ int main(int argc, char** argv)
     std::signal(SIGTERM, signalHandler);
 #endif
 
-    printf("melonDS " MELONDS_VERSION "\n");
+    printf("WideMelon " WIDEMELON_VERSION " (melonDS " MELONDS_VERSION ")\n");
     printf(MELONDS_URL "\n");
 
     // easter egg - not worth checking other cases for something so dumb

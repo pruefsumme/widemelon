@@ -1,4 +1,5 @@
 include(CMakeDependentOption)
+include(GNUInstallDirs)
 
 include(FixInterfaceIncludes)
 
@@ -188,7 +189,7 @@ endif()
 
 
 if (BUILD_STATIC)
-    qt_import_plugins(melonDS INCLUDE Qt::QSvgPlugin)
+    qt_import_plugins(melonDS INCLUDE Qt::QSvgPlugin Qt::QJpegPlugin)
     if (WIN32 AND USE_QT6)
         qt_import_plugins(melonDS INCLUDE Qt::QModernWindowsStylePlugin)
     endif()
@@ -220,7 +221,7 @@ if (WIN32)
         target_compile_definitions(melonDS PRIVATE WIN32_PORTABLE)
     endif()
 
-    string(REPLACE . , MELON_RC_VERSION ${melonDS_VERSION})
+    string(REPLACE . , MELON_RC_VERSION "${WIDEMELON_VERSION}.0")
     configure_file("${CMAKE_SOURCE_DIR}/res/melon.rc.in" "${CMAKE_BINARY_DIR}/res/melon.rc")
     target_sources(melonDS PUBLIC "${CMAKE_BINARY_DIR}/res/melon.rc")
     target_include_directories(melonDS PRIVATE "${CMAKE_BINARY_DIR}/res")
@@ -239,18 +240,12 @@ if (WIN32)
 
     if (MINGW)
         configure_file("${CMAKE_SOURCE_DIR}/res/xp.manifest.in" "${CMAKE_BINARY_DIR}/res/xp.manifest")
-    else()
-        # Work around faad2 unconditionally linking libm even on Windows
-        if (USE_VCPKG)
-            add_library(m STATIC)
-            target_link_libraries(melonDS PUBLIC m)
-        endif()
     endif()
 endif()
 
 if (APPLE)
     # Copy icon into the bundle
-    set(RESOURCE_FILES "${CMAKE_SOURCE_DIR}/res/melon.icns")
+    set(RESOURCE_FILES "${CMAKE_SOURCE_DIR}/res/widemelon.icns")
     target_sources(melonDS PUBLIC "${RESOURCE_FILES}")
 
     set_target_properties(melonDS PROPERTIES
@@ -275,14 +270,23 @@ endif()
 
 if (UNIX AND NOT APPLE)
     foreach(SIZE 16 32 48 64 128 256)
-        install(FILES ${CMAKE_SOURCE_DIR}/res/icon/melon_${SIZE}x${SIZE}.png
-            DESTINATION ${CMAKE_INSTALL_PREFIX}/share/icons/hicolor/${SIZE}x${SIZE}/apps
+        install(FILES ${CMAKE_SOURCE_DIR}/assets/icons/widemelon-${SIZE}.png
+            DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/${SIZE}x${SIZE}/apps
             RENAME io.github.pruefsumme.WideMelon.png)
     endforeach()
 
-    install(FILES io.github.pruefsumme.WideMelon.desktop DESTINATION ${CMAKE_INSTALL_PREFIX}/share/applications)
-    install(FILES io.github.pruefsumme.WideMelon.metainfo.xml DESTINATION ${CMAKE_INSTALL_PREFIX}/share/metainfo)
-    set(WIDEMELON_DOC_DIR ${CMAKE_INSTALL_PREFIX}/share/doc/widemelon)
+    install(FILES io.github.pruefsumme.WideMelon.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+    install(FILES io.github.pruefsumme.WideMelon.metainfo.xml DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo)
+endif()
+
+if (APPLE)
+    set(WIDEMELON_DOC_DIR Applications/WideMelon.app/Contents/Resources/doc)
+elseif (WIN32)
+    set(WIDEMELON_DOC_DIR doc)
+else()
+    set(WIDEMELON_DOC_DIR ${CMAKE_INSTALL_DATADIR}/doc/widemelon)
+endif()
+
     install(FILES
         ${CMAKE_SOURCE_DIR}/LICENSE
         ${CMAKE_SOURCE_DIR}/NOTICE.md
@@ -310,7 +314,9 @@ if (UNIX AND NOT APPLE)
         ${CMAKE_SOURCE_DIR}/licenses/ENet-LICENSE
         ${CMAKE_SOURCE_DIR}/licenses/QRCodeGenerator-LICENSE
         DESTINATION ${WIDEMELON_DOC_DIR}/licenses)
-    install(TARGETS melonDS BUNDLE DESTINATION ${CMAKE_BINARY_DIR} RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
+
+if (UNIX AND NOT APPLE)
+    install(TARGETS melonDS BUNDLE DESTINATION ${CMAKE_BINARY_DIR} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
     if (NOT USE_QT6)
         set_target_properties(melonDS PROPERTIES
@@ -318,7 +324,9 @@ if (UNIX AND NOT APPLE)
             INTERPROCEDURAL_OPTIMIZATION_RELEASE OFF)
     endif()
 elseif(APPLE)
-    install(TARGETS melonDS BUNDLE DESTINATION "${CMAKE_INSTALL_PREFIX}/Applications")
+    install(TARGETS melonDS BUNDLE DESTINATION Applications)
+elseif(WIN32)
+    install(TARGETS melonDS RUNTIME DESTINATION .)
 endif()
 
 if (ENABLE_OGLRENDERER)

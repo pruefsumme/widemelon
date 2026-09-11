@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(WideMelonTests VERSION 0.2.0 LANGUAGES CXX)
+project(WideMelonTests VERSION 1.0.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 option(WIDEMELON_ENABLE_STREAM_BENCHMARK
@@ -7,6 +7,12 @@ option(WIDEMELON_ENABLE_STREAM_BENCHMARK
 
 include(CTest)
 if(BUILD_TESTING)
+    if(WIN32)
+        # The frontend sources include Windows headers through EmuInstance.h;
+        # keep their std::max/std::min calls safe from the Windows macros.
+        add_compile_definitions(WIN32_LEAN_AND_MEAN NOMINMAX)
+    endif()
+
     add_executable(profile_test profile_test.cpp)
     target_include_directories(profile_test PRIVATE ../src)
     foreach(width 256 308 342 448 682 768)
@@ -46,10 +52,31 @@ if(BUILD_TESTING)
         ../src/frontend/qt_sdl/phone/phone.qrc)
     set_target_properties(phone_bridge_test PROPERTIES AUTOMOC ON AUTORCC ON)
     target_include_directories(phone_bridge_test PRIVATE ../src ../src/net ../src/frontend ../src/frontend/qt_sdl)
+    # PhoneLayout uses the frontend's hotkey definitions through EmuInstance.h,
+    # which includes SDL headers. They need an explicit path outside /usr/include.
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(SDL2 REQUIRED IMPORTED_TARGET sdl2)
+    include(../cmake/FixInterfaceIncludes.cmake)
+    fix_interface_includes(PkgConfig::SDL2)
+    target_include_directories(phone_bridge_test PRIVATE
+        $<TARGET_PROPERTY:PkgConfig::SDL2,INTERFACE_INCLUDE_DIRECTORIES>)
     target_link_libraries(phone_bridge_test PRIVATE Qt${QT_VERSION_MAJOR}::Widgets
         Qt${QT_VERSION_MAJOR}::Concurrent Qt${QT_VERSION_MAJOR}::Network Qt${QT_VERSION_MAJOR}::WebSockets)
+    get_target_property(QT_GUI_LIBRARY_TYPE Qt${QT_VERSION_MAJOR}::Gui TYPE)
+    if(QT_GUI_LIBRARY_TYPE STREQUAL "STATIC_LIBRARY")
+        qt_import_plugins(phone_protocol_test INCLUDE Qt::QJpegPlugin)
+        qt_import_plugins(phone_bridge_test INCLUDE Qt::QJpegPlugin)
+    endif()
     add_test(NAME phone_bridge COMMAND phone_bridge_test)
-    set_tests_properties(phone_bridge PROPERTIES TIMEOUT 20 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    if(APPLE)
+        set(WIDEMELON_TEST_QPA cocoa)
+    elseif(WIN32)
+        set(WIDEMELON_TEST_QPA windows)
+    else()
+        set(WIDEMELON_TEST_QPA offscreen)
+    endif()
+    set_tests_properties(phone_bridge PROPERTIES TIMEOUT 20
+        ENVIRONMENT "QT_QPA_PLATFORM=${WIDEMELON_TEST_QPA}")
 
     add_executable(phone_firewall_test phone_firewall_test.cpp ../src/frontend/qt_sdl/PhoneFirewall.cpp)
     target_include_directories(phone_firewall_test PRIVATE ../src)

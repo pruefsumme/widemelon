@@ -3,7 +3,7 @@
 require "open3"
 require "fileutils"
 
-$app_name = "melonDS"
+$app_name = "WideMelon"
 $build_dmg = false
 $build_dir = ""
 $bundle = ""
@@ -236,7 +236,7 @@ def locate_plugin(dirs, plugin)
   dirs.each do |dir|
     plugin_paths.each do |plug|
       path = File.join(dir, plug)
-      return path if File.exists? path
+      return path if File.exist? path
     end
   end
   puts "Couldn't find the required Qt plugin: #{plugin}"
@@ -255,6 +255,7 @@ bundle_plugins = File.join($bundle, "Contents", "PlugIns")
 want_plugins = [
   "styles/libqmacstyle.dylib",
   "platforms/libqcocoa.dylib",
+  "imageformats/libqjpeg.dylib",
   "imageformats/libqsvg.dylib"
 ]
 
@@ -292,6 +293,8 @@ if $build_dmg
     FileUtils.cp_r($bundle, dmg_dir, preserve: true)
     FileUtils.ln_s("/Applications", File.join(dmg_dir, "Applications"))
 
-    `hdiutil create -fs HFS+ -volname melonDS -srcfolder "#{dmg_dir}" -ov -format UDBZ "#{$build_dir}/melonDS.dmg"`
+    system("hdiutil", "create", "-fs", "HFS+", "-volname", $app_name,
+           "-srcfolder", dmg_dir, "-ov", "-format", "UDBZ",
+           File.join($build_dir, "#{$app_name}.dmg"), exception: true)
     FileUtils.rm_rf(dmg_dir)
 end

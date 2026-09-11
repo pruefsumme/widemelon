@@ -50,7 +50,13 @@ QString addressLabel(const QString& value)
 {
     if (QHostAddress(value).isLoopback()) return value + " (this computer only)";
     if (PhoneBridgeManager::isPrivateAddress(value))
-        return value + (IsLikelyVpnInterface(value) ? " (private; possible VPN)" : " (private LAN)");
+    {
+        const QString kind = IsLikelyVpnInterface(value) ? "private; possible VPN or virtual adapter"
+                                                          : "private LAN";
+        const QString interface = FindPhoneFirewallNetwork(value).interface;
+        return interface.isEmpty() ? value + " (" + kind + ')'
+                                   : value + " (" + kind + " · " + interface + ')';
+    }
     return value + " (non-private; unsafe)";
 }
 
@@ -96,11 +102,13 @@ void showFirewallGuide(QWidget* parent, const PhoneFirewallResult& detected,
     auto introduction = new QWizardPage;
     introduction->setTitle("Check the selected network");
     auto introductionLayout = new QVBoxLayout(introduction);
+    const QString firewallHint = detected.guidance.isEmpty() ? QString()
+        : "\n\nFirewall check: " + detected.guidance;
     auto explanation = new QLabel(
         QString("WideMelon's server is listening at %1:%2. If your phone can already open the pairing page, "
                 "no new rule is needed.\n\nUse only your trusted home network. WideMelon will not run "
                 "administrator commands; you review and run them in your terminal or system settings.")
-            .arg(address).arg(port));
+            .arg(address).arg(port) + firewallHint);
     explanation->setTextFormat(Qt::PlainText);
     explanation->setWordWrap(true);
     introductionLayout->addWidget(explanation);
@@ -485,7 +493,9 @@ bool PhoneScreenDialog::confirmUnsafeStart()
 {
     return QMessageBox::warning(this, "Start phone bridge on trusted network",
         "Pairing prevents ordinary devices from connecting, but video and controls are not encrypted. "
-        "Only continue on a private home network you trust.\n\nThe bridge stops when WideMelon exits.",
+        "Only continue on a private home network you trust. The phone and computer must be on the same local "
+        "network; guest Wi-Fi and wireless client isolation can prevent the connection.\n\nThe bridge stops when "
+        "WideMelon exits.",
         QMessageBox::Cancel | QMessageBox::Ok, QMessageBox::Cancel) == QMessageBox::Ok;
 }
 
@@ -496,6 +506,13 @@ void PhoneScreenDialog::startOrArm()
         QMessageBox::information(this, "No network available",
             "Connect this computer and phone to the same Wi-Fi network, or create a hotspot using your operating system. "
             "WideMelon will keep showing the small bottom screen.");
+        return;
+    }
+    if (QHostAddress(interfaceBox->currentData().toString()).isLoopback())
+    {
+        QMessageBox::information(this, "Computer-only address selected",
+            "The selected 127.0.0.0/8 address can only be opened on this computer. Select the private LAN address "
+            "that is on the same Wi-Fi or wired network as your phone, then start the server again.");
         return;
     }
     if (!confirmUnsafeStart()) return;

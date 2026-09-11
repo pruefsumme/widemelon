@@ -22,6 +22,9 @@ project(melonDS
     HOMEPAGE_URL "https://github.com/pruefsumme/widemelon"
     LANGUAGES C CXX)
 
+# WideMelon releases have their own version; retain the upstream engine version.
+set(WIDEMELON_VERSION "1.0.0")
+
 include(CheckSymbolExists)
 include(CheckLibraryExists)
 include(CMakeDependentOption)
@@ -109,4 +112,32 @@ add_subdirectory(src)
 
 if (BUILD_QT_SDL)
     add_subdirectory(src/frontend/qt_sdl)
+endif()
+
+option(WIDEMELON_ENABLE_DEB "Generate a Debian binary package with CPack" OFF)
+set(WIDEMELON_PACKAGE_VERSION "${WIDEMELON_VERSION}" CACHE STRING
+    "Version used for distribution packages")
+
+if (WIDEMELON_ENABLE_DEB)
+    if (NOT UNIX OR APPLE)
+        message(FATAL_ERROR "Debian packages can only be generated on Linux")
+    endif()
+
+    set(CPACK_GENERATOR "DEB")
+    set(CPACK_PACKAGE_NAME "widemelon")
+    set(CPACK_PACKAGE_VENDOR "WideMelon contributors")
+    set(CPACK_PACKAGE_CONTACT "https://github.com/pruefsumme/widemelon/issues")
+    set(CPACK_DEBIAN_PACKAGE_MAINTAINER "WideMelon contributors")
+    set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Widescreen Nintendo DS emulator based on melonDS")
+    set(CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/pruefsumme/widemelon")
+    set(CPACK_PACKAGE_VERSION "${WIDEMELON_PACKAGE_VERSION}")
+    set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
+    set(CPACK_DEBIAN_PACKAGE_SECTION "games")
+    set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
+    set(CPACK_DEBIAN_PACKAGE_RELEASE "1")
+    set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+    set(CPACK_DEBIAN_PACKAGE_CONTROL_STRICT_PERMISSION TRUE)
+    set(CPACK_DEBIAN_FILE_NAME
+        "widemelon_${WIDEMELON_PACKAGE_VERSION}-1_amd64.deb")
+    include(CPack)
 endif()

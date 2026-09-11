@@ -25,4 +25,13 @@ components are installed beside this notice and remain in the source tree.
 
 Linux AppImages also contain copyright files from the distribution packages
 whose shared libraries are bundled. Matching sources for bundled copyleft
-libraries are supplied in the release's third-party source archive.
+libraries are supplied in the release's complete corresponding-source archive.
+
+Windows and macOS packages statically link their vcpkg dependencies. The macOS
+bundle includes the installed ports' copyright and license texts. The Windows
+executable exposes its GPL and source location in the About dialog, and the
+official release page accompanies it with the same notices and complete source.
+Matching source downloads, pinned build recipes, patches, resolved package
+versions, and build provenance are supplied in the release's single complete
+corresponding-source archive. These inputs allow modified libraries to be
+rebuilt and relinked into WideMelon.

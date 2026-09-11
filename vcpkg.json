@@ -40,7 +40,7 @@
 				{
 					"name": "qtbase",
 					"default-features": false,
-					"features": ["gui", "png", "thread", "widgets", "opengl", "zstd", "harfbuzz"]
+					"features": ["gui", "png", "jpeg", "concurrent", "network", "thread", "widgets", "opengl", "zstd", "harfbuzz"]
 				},
 				{
 					"name": "qtbase",
@@ -63,7 +63,8 @@
 					"features": ["gstreamer"],
 					"default-features": false
 				},
-				"qtsvg"
+				"qtsvg",
+				"qtwebsockets"
 			]
 		},
 		"qt5": {
@@ -79,7 +80,8 @@
 					"default-features": false
 				},
 				"qt5-multimedia",
-				"qt5-svg"
+				"qt5-svg",
+				"qt5-websockets"
 			]
 		}
 	}

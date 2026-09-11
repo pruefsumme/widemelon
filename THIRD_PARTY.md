@@ -18,7 +18,15 @@ Pinned source dependencies:
   libarchive, zstd, and other host libraries. Linux AppImages bundle selected
   shared libraries; their package copyright files are embedded in the AppImage
   and their matching distribution sources are published in the release's
-  third-party source archive.
+  complete corresponding-source archive.
+- Windows and macOS releases statically link dependencies built using vcpkg
+  registry `9b965a116838c6cdcd36bca60d1b81b030c8ab8d` and the overlays in
+  `cmake/overlay-ports/`. Each native package includes dependency license texts
+  and resolved versions. The complete corresponding-source archive contains
+  the matching pinned recipes, patches, source downloads, and application
+  commit for every platform. Qt 6.11
+  includes WebSockets, Concurrent, SVG, and JPEG support. The native FAAD2
+  overlay uses the same 2.11.2 source as the Linux build.
 - QR Code generator library: https://github.com/nayuki/QR-Code-generator
   commit `3c6d0b3cefb4e049dc337e82237c9644399716a8` (MIT).
 

@@ -310,6 +310,20 @@ QStringList PhoneBridgeManager::availableIPv4Addresses(bool includeLoopback)
             if (!result.contains(text)) result.append(text);
         }
     }
+    // A VPN, container bridge, or other virtual adapter can expose a private
+    // address that is not reachable from a phone on the physical Wi-Fi. Keep
+    // those choices visible, but make a physical private LAN address the
+    // default whenever one is available.
+    QHash<QString, int> priorities;
+    for (const QString& value : result)
+    {
+        priorities.insert(value, QHostAddress(value).isLoopback() ? 2
+            : IsLikelyVpnInterface(value) ? 1 : 0);
+    }
+    std::stable_sort(result.begin(), result.end(), [&priorities](const QString& left, const QString& right)
+    {
+        return priorities.value(left) < priorities.value(right);
+    });
     return result;
 }
 
@@ -385,7 +399,11 @@ bool PhoneBridgeManager::start()
     currentStatus = "Waiting for paired phone";
     heartbeatTimer->start();
     if (testPattern.load()) testPatternTimer->start();
-    log(Info, "lifecycle", QString("Listening for a paired phone at %1").arg(url()));
+    const PhoneFirewallNetwork network = FindPhoneFirewallNetwork(currentSettings.address);
+    const QString networkLabel = network.interface.isEmpty()
+        ? QStringLiteral("interface unknown")
+        : QString("%1/%2").arg(network.interface).arg(network.prefixLength);
+    log(Info, "lifecycle", QString("Listening for a paired phone at %1 (%2)").arg(url(), networkLabel));
     emit statusChanged();
     return true;
 }
@@ -598,7 +616,8 @@ void PhoneBridgeManager::handleTcpSocket(QTcpSocket* socket)
     {
         socket->disconnectFromHost();
         socket->deleteLater();
-        log(Debug, "security", "Rejected a connection outside the selected local subnet");
+        log(Info, "network", "Rejected a connection from " + sanitizedAddress(socket->peerAddress())
+            + "; the device is outside the selected local subnet");
         return;
     }
     pendingTcpSockets.insert(socket);
@@ -636,6 +655,7 @@ void PhoneBridgeManager::routeTcpSocket(QTcpSocket* socket)
     {
         socket->write(httpReply(400, "Bad Request", "text/plain", "Invalid request\n"));
         socket->disconnectFromHost();
+        log(Info, "http", "Rejected an invalid request from " + sanitizedAddress(socket->peerAddress()));
         return;
     }
 
@@ -669,7 +689,7 @@ void PhoneBridgeManager::serveHttpSocket(QTcpSocket* socket, const QByteArray& p
         + "; img-src 'self' blob:; style-src 'self'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
     socket->write(httpReply(200, "OK", type, head ? QByteArray() : body, csp, body.size()));
     socket->disconnectFromHost();
-    log(Debug, "http", QString("Served %1").arg(QString::fromUtf8(path)));
+    log(Info, "http", QString("Served %1 to %2").arg(QString::fromUtf8(path), sanitizedAddress(socket->peerAddress())));
 }
 
 void PhoneBridgeManager::acceptWebSocket()
@@ -823,7 +843,7 @@ void PhoneBridgeManager::recordAuthenticationFailure(const QHostAddress& peer, q
         QMutexLocker lock(&stateMutex);
         currentMetrics.authenticationFailures++;
     }
-    log(Debug, "security", "Rejected invalid pairing credentials from " + sanitizedAddress(peer));
+    log(Info, "security", "Rejected invalid pairing credentials from " + sanitizedAddress(peer));
 }
 
 void PhoneBridgeManager::generatePairingCredentials()

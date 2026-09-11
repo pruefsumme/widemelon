@@ -1,4 +1,4 @@
-// Exercise the production bridge over real loopback HTTP/WebSocket sockets.
+// Exercise the production bridge over real loopback or selected-LAN HTTP/WebSocket sockets.
 // Copyright (C) 2026 WideMelon contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "frontend/qt_sdl/PhoneBridge.h"
@@ -27,6 +27,9 @@
 
 namespace
 {
+// CI runners can delay WebSocket close delivery and the first one-second sample.
+constexpr int kSlowBridgeTimeoutMs = 5000;
+
 bool waitUntil(const std::function<bool()>& condition, int timeoutMs = 1500)
 {
     QElapsedTimer timer;
@@ -61,13 +64,17 @@ bool released(const PhoneBridgeManager& bridge)
 int main(int argc, char** argv)
 {
     QApplication application(argc, argv);
+    const QString requestedAddress = qEnvironmentVariable("WIDEMELON_PHONE_TEST_ADDRESS");
+    const bool loopbackTest = requestedAddress.isEmpty();
+    const QHostAddress testAddress = loopbackTest ? QHostAddress::LocalHost : QHostAddress(requestedAddress);
+    CHECK(!testAddress.isNull());
     QTcpServer portReservation;
-    CHECK(portReservation.listen(QHostAddress::LocalHost, 0));
+    CHECK(portReservation.listen(testAddress, 0));
     const quint16 port = portReservation.serverPort();
     portReservation.close();
     PhoneBridgeManager bridge;
     auto settings = bridge.settings();
-    settings.address = "127.0.0.1";
+    settings.address = loopbackTest ? QStringLiteral("127.0.0.1") : requestedAddress;
     settings.basePort = port;
     if (qEnvironmentVariableIsSet("WIDEMELON_BENCH_QUALITY"))
     {
@@ -161,8 +168,9 @@ int main(int argc, char** argv)
     CHECK(wizard && !wizard->isModal());
     firewallGuide->click();
     CHECK(dialog.findChildren<QWizard*>("phoneFirewallGuide").size() == 1);
-    for (QPlainTextEdit* text : wizard->findChildren<QPlainTextEdit*>())
-        CHECK(!text->toPlainText().contains("sudo")); // loopback needs no rule
+    if (loopbackTest)
+        for (QPlainTextEdit* text : wizard->findChildren<QPlainTextEdit*>())
+            CHECK(!text->toPlainText().contains("sudo")); // loopback needs no rule
     if (qEnvironmentVariableIsSet("WIDEMELON_PHONE_FIREWALL_SCREENSHOT"))
     {
         const QString screenshot = qEnvironmentVariable("WIDEMELON_PHONE_FIREWALL_SCREENSHOT");
@@ -180,8 +188,8 @@ int main(int argc, char** argv)
     CHECK(report.open(QIODevice::ReadOnly));
     const QByteArray reportData = report.readAll();
     CHECK(!reportData.contains(originalCode.toUtf8()) && !reportData.contains(originalUrl.toUtf8()));
-    CHECK(!reportData.contains("127.0.0.1"));
-    const QByteArray host = "127.0.0.1:" + QByteArray::number(port);
+    CHECK(!reportData.contains(settings.address.toUtf8()));
+    const QByteArray host = settings.address.toUtf8() + ':' + QByteArray::number(port);
     auto request = [&] {
         QNetworkRequest result(QUrl("ws://" + QString::fromLatin1(host) + "/bridge"));
         result.setRawHeader("Origin", "http://" + host);
@@ -196,7 +204,7 @@ int main(int argc, char** argv)
     };
     auto http = [&](const QByteArray& path, bool head = false) {
         QTcpSocket socket;
-        socket.connectToHost(QHostAddress::LocalHost, port);
+        socket.connectToHost(testAddress, port);
         if (!waitUntil([&] { return socket.state() == QAbstractSocket::ConnectedState; })) return QByteArray();
         socket.write((head ? "HEAD " : "GET ") + path + " HTTP/1.1\r\nHost: " + host + "\r\n\r\n");
         waitUntil([&] { return socket.state() == QAbstractSocket::UnconnectedState; });
@@ -225,19 +233,29 @@ int main(int argc, char** argv)
 
     // Two sockets can finish the handshake before either authenticates.
     QWebSocket first, second;
-    int firstMessages = 0, secondMessages = 0, frameCount = 0;
+    int secondMessages = 0, frameCount = 0;
+    bool firstReceivedHello = false;
+    bool acknowledgeFrames = false;
     quint32 receivedSequence = 0;
-    QObject::connect(&first, &QWebSocket::textMessageReceived, [&] { firstMessages++; });
+    QObject::connect(&first, &QWebSocket::textMessageReceived, [&](const QString& text) {
+        const auto message = QJsonDocument::fromJson(text.toUtf8()).object();
+        const QString type = message.value("type").toString();
+        if (type == "hello") firstReceivedHello = true;
+        if (type == "ping")
+            send(first, {{"v", 2}, {"type", "pong"}, {"sent", message.value("sent")}});
+    });
     QObject::connect(&second, &QWebSocket::textMessageReceived, [&] { secondMessages++; });
     QObject::connect(&first, &QWebSocket::binaryMessageReceived, [&](const QByteArray& packet) {
         frameCount++;
         receivedSequence = qFromLittleEndian<quint32>(reinterpret_cast<const uchar*>(packet.constData() + 4));
+        if (acknowledgeFrames)
+            send(first, {{"v", 2}, {"type", "frameAck"}, {"seq", double(receivedSequence)}, {"decodeMs", 1.0}});
     });
     CHECK(open(first) && open(second));
     auth(first, originalCode);
+    CHECK(waitUntil([&] { return bridge.isConnected() && firstReceivedHello; }, kSlowBridgeTimeoutMs));
     auth(second, originalCode);
-    CHECK(waitUntil([&] { return bridge.isConnected() && firstMessages == 1
-        && second.state() == QAbstractSocket::UnconnectedState; }));
+    CHECK(waitUntil([&] { return second.state() == QAbstractSocket::UnconnectedState; }, kSlowBridgeTimeoutMs));
     CHECK(secondMessages == 0);
     bridge.submitFrame(frame, 2.5);
     CHECK(waitUntil([&] { return frameCount == 1; }));
@@ -288,19 +306,51 @@ int main(int argc, char** argv)
         CHECK(bridge.remoteKeyMask() == (0xFFFU ^ 0x401U));
     }
     CHECK(bridge.isConnected() && bridge.metrics().framesSent == framesBeforeStroke);
-    QObject::connect(&first, &QWebSocket::textMessageReceived, [&](const QString& text) {
-        const auto message = QJsonDocument::fromJson(text.toUtf8()).object();
-        if (message.value("type").toString() == "ping")
-            send(first, {{"v", 2}, {"type", "pong"}, {"sent", message.value("sent")}});
+
+    // Keep all telemetry counters active until one sampling interval contains
+    // complete traffic. A one-shot frame can be replaced by a later zero-rate
+    // sample on a slow runner before diagnostics are exported.
+    QTimer telemetryTraffic;
+    acknowledgeFrames = true;
+    QObject::connect(&telemetryTraffic, &QTimer::timeout, [&] {
+        bridge.submitFrame(frame);
+        auto snapshot = input(inputSequence++);
+        snapshot["buttons"] = inputSequence & 1;
+        send(first, snapshot);
     });
-    CHECK(waitUntil([&] { return bridge.metrics().offeredFps > 0; }));
+    telemetryTraffic.start(20);
+    QJsonObject completeSample;
+    const QString timingPath = diagnostics.filePath("timing.json");
+    CHECK(waitUntil([&] {
+        if (!bridge.exportDiagnostics(timingPath, {})) return false;
+        QFile currentReport(timingPath);
+        if (!currentReport.open(QIODevice::ReadOnly)) return false;
+        const auto currentSamples = QJsonDocument::fromJson(currentReport.readAll())
+            .object().value("performanceSamples").toArray();
+        if (currentSamples.isEmpty()) return false;
+        const auto candidate = currentSamples.last().toObject();
+        if (candidate.value("offeredFps").toDouble() <= 0
+            || candidate.value("sentFps").toDouble() <= 0
+            || candidate.value("ackedFps").toDouble() <= 0
+            || candidate.value("inputsPerSecond").toDouble() <= 0)
+            return false;
+        completeSample = candidate;
+        return true;
+    }, kSlowBridgeTimeoutMs));
+    telemetryTraffic.stop();
+    acknowledgeFrames = false;
+
+    // Export immediately, without processing another heartbeat that could
+    // append an idle sample, and validate the exact sample just observed.
     CHECK(bridge.exportDiagnostics(diagnostics.filePath("timing.json"), {}));
     QFile timingReport(diagnostics.filePath("timing.json"));
     CHECK(timingReport.open(QIODevice::ReadOnly));
     const auto samples = QJsonDocument::fromJson(timingReport.readAll()).object().value("performanceSamples").toArray();
     CHECK(!samples.isEmpty() && samples.size() <= 60);
     const auto sample = samples.last().toObject();
+    CHECK(sample == completeSample);
     CHECK(sample.value("maxCaptureMs").toDouble() == 2.5);
+    CHECK(sample.value("offeredFps").toDouble() > 0);
     CHECK(sample.value("inputsPerSecond").toDouble() > 0);
     CHECK(sample.value("sentFps").toDouble() > 0 && sample.value("ackedFps").toDouble() > 0);
 

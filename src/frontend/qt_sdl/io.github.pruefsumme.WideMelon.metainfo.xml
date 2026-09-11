@@ -20,4 +20,7 @@
   <provides>
     <binary>widemelon</binary>
   </provides>
+  <releases>
+    <release version="1.0.0" date="2026-09-10"/>
+  </releases>
 </component>
