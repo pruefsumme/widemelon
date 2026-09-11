@@ -138,6 +138,7 @@ view. Menus, battles, videos, and special effects can remain 4:3 by design. The
 expanded profiles require the classic OpenGL renderer; native 4:3 remains
 available as the compatibility profile.
 
+> [!CAUTION]
 > **Compatibility note:** Widescreen support is game-dependent. It may not work correctly or provide much benefit in every game, because results depend on how that game renders its 3D scene.
 
 ## Build from source
