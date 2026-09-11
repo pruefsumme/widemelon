@@ -235,6 +235,7 @@ int main(int argc, char** argv)
     QWebSocket first, second;
     int secondMessages = 0, frameCount = 0;
     bool firstReceivedHello = false;
+    bool acknowledgeFrames = false;
     quint32 receivedSequence = 0;
     QObject::connect(&first, &QWebSocket::textMessageReceived, [&](const QString& text) {
         const auto message = QJsonDocument::fromJson(text.toUtf8()).object();
@@ -247,6 +248,8 @@ int main(int argc, char** argv)
     QObject::connect(&first, &QWebSocket::binaryMessageReceived, [&](const QByteArray& packet) {
         frameCount++;
         receivedSequence = qFromLittleEndian<quint32>(reinterpret_cast<const uchar*>(packet.constData() + 4));
+        if (acknowledgeFrames)
+            send(first, {{"v", 2}, {"type", "frameAck"}, {"seq", double(receivedSequence)}, {"decodeMs", 1.0}});
     });
     CHECK(open(first) && open(second));
     auth(first, originalCode);
@@ -303,14 +306,51 @@ int main(int argc, char** argv)
         CHECK(bridge.remoteKeyMask() == (0xFFFU ^ 0x401U));
     }
     CHECK(bridge.isConnected() && bridge.metrics().framesSent == framesBeforeStroke);
-    CHECK(waitUntil([&] { return bridge.metrics().offeredFps > 0; }, kSlowBridgeTimeoutMs));
+
+    // Keep all telemetry counters active until one sampling interval contains
+    // complete traffic. A one-shot frame can be replaced by a later zero-rate
+    // sample on a slow runner before diagnostics are exported.
+    QTimer telemetryTraffic;
+    acknowledgeFrames = true;
+    QObject::connect(&telemetryTraffic, &QTimer::timeout, [&] {
+        bridge.submitFrame(frame);
+        auto snapshot = input(inputSequence++);
+        snapshot["buttons"] = inputSequence & 1;
+        send(first, snapshot);
+    });
+    telemetryTraffic.start(20);
+    QJsonObject completeSample;
+    const QString timingPath = diagnostics.filePath("timing.json");
+    CHECK(waitUntil([&] {
+        if (!bridge.exportDiagnostics(timingPath, {})) return false;
+        QFile currentReport(timingPath);
+        if (!currentReport.open(QIODevice::ReadOnly)) return false;
+        const auto currentSamples = QJsonDocument::fromJson(currentReport.readAll())
+            .object().value("performanceSamples").toArray();
+        if (currentSamples.isEmpty()) return false;
+        const auto candidate = currentSamples.last().toObject();
+        if (candidate.value("offeredFps").toDouble() <= 0
+            || candidate.value("sentFps").toDouble() <= 0
+            || candidate.value("ackedFps").toDouble() <= 0
+            || candidate.value("inputsPerSecond").toDouble() <= 0)
+            return false;
+        completeSample = candidate;
+        return true;
+    }, kSlowBridgeTimeoutMs));
+    telemetryTraffic.stop();
+    acknowledgeFrames = false;
+
+    // Export immediately, without processing another heartbeat that could
+    // append an idle sample, and validate the exact sample just observed.
     CHECK(bridge.exportDiagnostics(diagnostics.filePath("timing.json"), {}));
     QFile timingReport(diagnostics.filePath("timing.json"));
     CHECK(timingReport.open(QIODevice::ReadOnly));
     const auto samples = QJsonDocument::fromJson(timingReport.readAll()).object().value("performanceSamples").toArray();
     CHECK(!samples.isEmpty() && samples.size() <= 60);
     const auto sample = samples.last().toObject();
+    CHECK(sample == completeSample);
     CHECK(sample.value("maxCaptureMs").toDouble() == 2.5);
+    CHECK(sample.value("offeredFps").toDouble() > 0);
     CHECK(sample.value("inputsPerSecond").toDouble() > 0);
     CHECK(sample.value("sentFps").toDouble() > 0 && sample.value("ackedFps").toDouble() > 0);
 
