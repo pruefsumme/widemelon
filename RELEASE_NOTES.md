@@ -1,57 +1,54 @@
 <!-- Copyright (C) 2026 WideMelon contributors -->
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 
-# WideMelon 1.0.0
+# WideMelon 1.0.1
 
-The first WideMelon release for Windows, macOS, and Linux.
+WideMelon 1.0.1 introduces a polished home screen that puts recent games and
+the most useful setup actions directly in the emulator window.
 
-- Wider 3D views from 4:3 through 32:9, with native proportions for 2D interfaces.
-- Native startup settings for viewport, resolution, fullscreen, and 1×–8× rendering.
-- Optional paired phone bottom screen and touch controller, with a visual layout editor.
-- Session-only pairing, private-network checks, stream diagnostics, and firewall guidance.
-- Separate settings and saves from a standard melonDS installation.
+## What's new
+
+- A new WideMelon home screen replaces the original melonDS idle splash.
+- Up to ten recent ROMs are shown in a larger, readable list and open with a
+  double-click.
+- Compact icon buttons provide direct access to display and resolution
+  settings, phone pairing, and ROM selection.
+- Display settings no longer open the phone connection dialog automatically.
+- Product descriptions and documentation now reflect WideMelon's stable status.
 
 ## Downloads
 
 | System | Download | Run |
 | --- | --- | --- |
-| Windows 10/11, x64 | `WideMelon-1.0.0-Windows-x86_64.exe` | Download and open the executable. |
-| macOS 13+, Apple Silicon | `WideMelon-1.0.0-macOS-arm64.dmg` | Open the image and drag WideMelon to Applications. |
-| macOS 13+, Intel | `WideMelon-1.0.0-macOS-x86_64.dmg` | Open the image and drag WideMelon to Applications. |
-| Ubuntu 22.04+, x64 | `widemelon_1.0.0-1_amd64.deb` | Install with your software manager or `apt install ./widemelon_1.0.0-1_amd64.deb`. |
-| Linux x64, Ubuntu 22.04 or newer equivalent | `WideMelon-1.0.0-x86_64.AppImage` | Mark executable and open it. |
+| Windows 10/11, x64 | `WideMelon-1.0.1-Windows-x86_64.exe` | Download and open the executable. |
+| macOS 13+, Apple Silicon | `WideMelon-1.0.1-macOS-arm64.dmg` | Open the image and drag WideMelon to Applications. |
+| macOS 13+, Intel | `WideMelon-1.0.1-macOS-x86_64.dmg` | Open the image and drag WideMelon to Applications. |
+| Ubuntu 22.04+, x64 | `widemelon_1.0.1-1_amd64.deb` | Install with your software manager or `apt install ./widemelon_1.0.1-1_amd64.deb`. |
+| Linux x64 | `WideMelon-1.0.1-x86_64.AppImage` | Mark the file executable and open it. |
 
-The Windows build is unsigned, so SmartScreen can show an unknown-publisher
-warning. macOS apps are ad-hoc signed unless optional Developer ID credentials
-are configured, so macOS may require approval in Privacy & Security. Never
-disable SmartScreen or Gatekeeper globally. Only approve a download obtained
-from this repository after verifying its SHA-256 checksum. Linux needs an
-OpenGL-capable graphics driver; AppImage users also need FUSE 2 or can run the
-image with `--appimage-extract-and-run`.
+Arch Linux users can install `widemelon`, `widemelon-bin`, or `widemelon-git`
+from the AUR.
 
-## Compatibility and limitations
+## Widescreen and phone controller
 
-Widescreen expansion remains experimental and game-dependent. Games can cull
-objects outside the original view, and battles, videos, menus, or some effects
-can remain 4:3. The classic OpenGL renderer is required for expanded views;
-native 4:3 remains the compatibility profile.
+WideMelon expands supported 3D scenes while keeping native 2D interfaces,
+menus, videos, and touchscreen content centered at their original proportions.
+Expanded views require the classic OpenGL renderer. Results remain
+game-dependent because some titles cull geometry outside the original view.
 
-The optional phone bridge sends JPEG video at up to 30 FPS without audio. Use
-it only on a trusted private home network: pairing is required, but transport
-is not encrypted. Wi-Fi performance and browser behavior vary by device.
-
-No ROMs, commercial BIOS, firmware, saves, or game assets are included. Automated
-tests cover profile math and phone controls/transport; they do not prove game
-compatibility or every graphics driver. Supply your own legally obtained games.
+The optional phone bridge sends the bottom screen and customizable DS controls
+to a paired browser on the same trusted private network. It is disabled by
+default, uses session-only credentials, and does not stream audio.
 
 ## Source and verification
 
-`SHA256SUMS` covers every downloadable binary and the single
-`WideMelon-1.0.0-Complete-Source.tar.zst` archive. Players do not need the source
-download. It contains the exact application source, build scripts, pinned FAAD2
-and ENet source, and the dependency sources and build metadata matching every
-published platform binary. See `SOURCE.md` and `BUILD.md` inside it for rebuild
-instructions.
+`SHA256SUMS` covers every downloadable binary and the
+`WideMelon-1.0.1-Complete-Source.tar.zst` archive. The source archive contains
+the exact application source, build scripts, pinned dependency sources, and
+platform build metadata for this release.
 
-WideMelon is GPL-3.0-or-later, based on melonDS 1.1, and is maintained independently
+WideMelon includes no ROMs, commercial BIOS or firmware files, saves, or game
+assets. Use your own legally obtained games.
+
+WideMelon is GPL-3.0-or-later, based on melonDS 1.1, and maintained independently
 from the melonDS project, Nintendo, Game Freak, and The Pokémon Company.

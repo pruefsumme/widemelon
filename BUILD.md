@@ -214,7 +214,7 @@ WIDEMELON_PHONE_LOG_LEVEL=debug WIDEMELON_PHONE_LOG_FILE=1 ./widemelon
 It builds direct Windows, macOS DMG, Linux AppImage, and Debian downloads, runs
 tests, packages exact dependency sources, and publishes only after every
 platform succeeds. Manual runs upload development artifacts without creating a
-GitHub release or changing AUR. A `v1.0.0` tag must match `WIDEMELON_VERSION` in
+GitHub release or changing AUR. A `v1.0.1` tag must match `WIDEMELON_VERSION` in
 `CMakeLists.txt` to publish. Release notes come from `RELEASE_NOTES.md`.
 `SHA256SUMS` covers every published asset. Ordinary branch pushes use the faster
 CI workflow.
@@ -230,13 +230,13 @@ and reruns skip repositories whose generated files are already current.
 Run `./scripts/build.sh` before committing release changes. Once committed:
 
 ```sh
-./scripts/package-source.sh 1.0.0
+./scripts/package-source.sh 1.0.1
 ```
 
 The native packaging command, after building and testing on that host, is:
 
 ```sh
-python scripts/package-native.py 1.0.0 macos-arm64 arm64-osx-13-release
+python scripts/package-native.py 1.0.1 macos-arm64 arm64-osx-13-release
 ```
 
 Use the matching platform/triplet for Windows or Intel macOS. Windows packaging

@@ -257,7 +257,8 @@ public:
 
         updateViewportControls();
         updateResolutionControls();
-        QTimer::singleShot(0, this, [this] { showPhoneDialog(); });
+        if (startup)
+            QTimer::singleShot(0, this, [this] { showPhoneDialog(); });
     }
 
     bool apply()

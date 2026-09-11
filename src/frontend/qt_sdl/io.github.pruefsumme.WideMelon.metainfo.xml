@@ -4,7 +4,7 @@
 <component type="desktop-application">
   <id>io.github.pruefsumme.WideMelon</id>
   <name>WideMelon</name>
-  <summary>Experimental widescreen Nintendo DS emulator</summary>
+  <summary>Widescreen Nintendo DS emulator with a phone controller</summary>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-or-later</project_license>
   <developer id="io.github.pruefsumme">
@@ -13,7 +13,7 @@
   <launchable type="desktop-id">io.github.pruefsumme.WideMelon.desktop</launchable>
   <content_rating type="oars-1.1"/>
   <description>
-    <p>WideMelon is an experimental widescreen build based on melonDS. It expands submitted 3D scenes while preserving native 2D proportions.</p>
+    <p>WideMelon is a widescreen Nintendo DS emulator based on melonDS. It reveals more of supported 3D scenes while preserving native 2D proportions, and can use a phone as the bottom screen and touch controller.</p>
   </description>
   <url type="homepage">https://github.com/pruefsumme/widemelon</url>
   <url type="vcs-browser">https://github.com/pruefsumme/widemelon</url>
@@ -21,6 +21,15 @@
     <binary>widemelon</binary>
   </provides>
   <releases>
+    <release version="1.0.1" date="2026-09-11">
+      <description>
+        <ul>
+          <li>Adds a new home screen with the WideMelon logo and recent ROMs.</li>
+          <li>Adds quick access to display settings, phone pairing, and ROM selection.</li>
+          <li>Separates display settings from the phone connection dialog.</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.0.0" date="2026-09-10"/>
   </releases>
 </component>

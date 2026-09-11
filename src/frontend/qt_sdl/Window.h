@@ -40,6 +40,7 @@
 
 class EmuInstance;
 class EmuThread;
+class QListWidget;
 
 const int kMaxRecentROMs = 10;
 
@@ -89,6 +90,7 @@ public:
     //void updateVideoSettings(bool glchange);
 
 protected:
+    bool eventFilter(QObject* watched, QEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
     void keyReleaseEvent(QKeyEvent* event) override;
 
@@ -194,7 +196,12 @@ private:
     QStringList currentGBAROM;
     QList<QString> recentFileList;
     QMenu *recentMenu;
+    QWidget* homePanel = nullptr;
+    QListWidget* homeRecentList = nullptr;
     void updateRecentFilesMenu();
+    void createHomePanel();
+    void updateHomePanel();
+    void openRecentFile(const QString& filename);
 
     bool verifySetup();
     QString pickFileFromArchive(QString archiveFileName);
