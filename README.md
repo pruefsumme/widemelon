@@ -5,7 +5,7 @@
 <h1 align="center">WideMelon</h1>
 
 <p align="center">
-  Nintendo DS games in widescreen — with an optional phone touchscreen and controller. Enjoy DS games like never before.
+ DS games in widescreen — with an optional phone touchscreen and controller. Enjoy DS games like never before.
 </p>
 
 <p align="center">
