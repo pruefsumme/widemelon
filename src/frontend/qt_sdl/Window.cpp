@@ -45,6 +45,15 @@
 #include <QVector>
 #include <QCommandLineParser>
 #include <QDesktopServices>
+#include <QFileInfo>
+#include <QGraphicsDropShadowEffect>
+#include <QIcon>
+#include <QLabel>
+#include <QListWidget>
+#include <QPainterPath>
+#include <QPushButton>
+#include <QHBoxLayout>
+#include <QVBoxLayout>
 
 #include "main.h"
 #include "CheatsDialog.h"
@@ -827,7 +836,12 @@ void MainWindow::createScreenPanel()
 {
     auto oldpanel = panel;
     panel = nullptr;
-    if (oldpanel) delete oldpanel;
+    if (oldpanel)
+    {
+        homePanel = nullptr;
+        homeRecentList = nullptr;
+        delete oldpanel;
+    }
 
     hasOGL = globalCfg.GetBool("Screen.UseGL") ||
             (globalCfg.GetInt("3D.Renderer") != renderer3D_Software);
@@ -880,6 +894,231 @@ void MainWindow::createScreenPanel()
         connect(emuInstance->getPhoneBridge(), &PhoneBridgeManager::connectionChanged,
                 this, [this] { emit screenLayoutChange(); });
     emit screenLayoutChange();
+
+    createHomePanel();
+}
+
+void MainWindow::createHomePanel()
+{
+    if (windowID != 0 || !panel)
+        return;
+
+    homePanel = new QWidget(panel);
+    homePanel->setObjectName("widemelonHome");
+    homePanel->setAttribute(Qt::WA_StyledBackground, true);
+    homePanel->setStyleSheet(R"(
+        QWidget#widemelonHome {
+            background: #000000;
+        }
+        QLabel#widemelonRecentTitle {
+            color: rgba(255, 255, 255, 210);
+            font-size: 15px;
+            font-weight: 600;
+        }
+        QListWidget#widemelonRecentList {
+            color: rgba(255, 255, 255, 235);
+            background: rgba(32, 34, 38, 217);
+            border: 1px solid rgba(255, 255, 255, 52);
+            border-radius: 10px;
+            padding: 5px;
+            outline: none;
+            font-size: 11px;
+        }
+        QListWidget#widemelonRecentList::item {
+            border-radius: 6px;
+            padding: 8px 10px;
+        }
+        QListWidget#widemelonRecentList::item:hover {
+            background: rgba(255, 255, 255, 28);
+        }
+        QListWidget#widemelonRecentList::item:selected {
+            background: rgba(94, 151, 78, 150);
+        }
+        QPushButton[class~="widemelonHomeButton"] {
+            color: white;
+            min-height: 38px;
+            padding: 0 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 72);
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                        stop:0 rgba(145, 149, 157, 217),
+                                        stop:0.48 rgba(108, 112, 120, 217),
+                                        stop:1 rgba(72, 76, 84, 217));
+            font-size: 14px;
+            font-weight: 600;
+        }
+        QPushButton[class~="widemelonHomeButton"]:hover {
+            border-color: rgba(255, 255, 255, 125);
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                        stop:0 rgba(162, 166, 174, 217),
+                                        stop:0.5 rgba(122, 126, 134, 217),
+                                        stop:1 rgba(82, 86, 94, 217));
+        }
+        QPushButton[class~="widemelonHomeButton"]:pressed {
+            padding-top: 2px;
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                        stop:0 rgba(70, 74, 82, 217),
+                                        stop:1 rgba(125, 129, 137, 217));
+        }
+    )");
+
+    auto pageLayout = new QVBoxLayout(homePanel);
+    pageLayout->setContentsMargins(24, 20, 24, 24);
+    pageLayout->addStretch(2);
+
+    auto content = new QWidget(homePanel);
+    content->setMaximumWidth(620);
+    auto contentLayout = new QVBoxLayout(content);
+    contentLayout->setContentsMargins(0, 0, 0, 0);
+    contentLayout->setSpacing(10);
+
+    auto logo = new QLabel(content);
+    logo->setAlignment(Qt::AlignCenter);
+    logo->setPixmap(QPixmap(":/widemelon-logo").scaled(230, 160, Qt::KeepAspectRatio,
+                                                       Qt::SmoothTransformation));
+    logo->setMinimumHeight(120);
+    contentLayout->addWidget(logo);
+    contentLayout->addSpacing(8);
+
+    auto recentTitle = new QLabel("Recent ROMs", content);
+    recentTitle->setObjectName("widemelonRecentTitle");
+    contentLayout->addWidget(recentTitle);
+
+    homeRecentList = new QListWidget(content);
+    homeRecentList->setObjectName("widemelonRecentList");
+    homeRecentList->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    homeRecentList->setWordWrap(true);
+    homeRecentList->setTextElideMode(Qt::ElideNone);
+    homeRecentList->setUniformItemSizes(false);
+    homeRecentList->setMinimumHeight(220);
+    homeRecentList->setMaximumHeight(380);
+    contentLayout->addWidget(homeRecentList);
+    contentLayout->addSpacing(8);
+
+    const auto makeIcon = [](int kind)
+    {
+        QPixmap pixmap(64, 64);
+        pixmap.fill(Qt::transparent);
+        pixmap.setDevicePixelRatio(2.0);
+
+        QPainter painter(&pixmap);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        painter.setPen(QPen(QColor(255, 255, 255, 235), 2.2,
+                            Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        painter.setBrush(Qt::NoBrush);
+
+        if (kind == 0) {
+            painter.drawRoundedRect(QRectF(4.5, 5.5, 23, 16), 2.5, 2.5);
+            painter.drawLine(QPointF(16, 22), QPointF(16, 27));
+            painter.drawLine(QPointF(11, 27), QPointF(21, 27));
+        }
+        else if (kind == 1)
+        {
+            painter.drawRoundedRect(QRectF(9, 3.5, 14, 25), 3.2, 3.2);
+            painter.drawLine(QPointF(13, 7), QPointF(19, 7));
+            painter.drawPoint(QPointF(16, 25));
+        }
+        else
+        {
+            QPainterPath folder;
+            folder.moveTo(3.5, 9);
+            folder.lineTo(12, 9);
+            folder.lineTo(15, 12);
+            folder.lineTo(28.5, 12);
+            folder.lineTo(26, 26.5);
+            folder.lineTo(5.5, 26.5);
+            folder.closeSubpath();
+            painter.drawPath(folder);
+        }
+
+        return QIcon(pixmap);
+    };
+
+    const auto makeButton = [content](const QIcon& icon, const QString& description)
+    {
+        auto button = new QPushButton(content);
+        button->setIcon(icon);
+        button->setIconSize(QSize(22, 22));
+        button->setToolTip(description);
+        button->setAccessibleName(description);
+        button->setProperty("class", "widemelonHomeButton");
+        auto shadow = new QGraphicsDropShadowEffect(button);
+        shadow->setBlurRadius(12);
+        shadow->setOffset(0, 3);
+        shadow->setColor(QColor(0, 0, 0, 150));
+        button->setGraphicsEffect(shadow);
+        return button;
+    };
+
+    auto buttonLayout = new QHBoxLayout();
+    buttonLayout->setContentsMargins(0, 0, 0, 0);
+    buttonLayout->setSpacing(8);
+    auto displayButton = makeButton(makeIcon(0), "Display & resolution");
+    auto phoneButton = makeButton(makeIcon(1), "Phone connection");
+    auto openButton = makeButton(makeIcon(2), "Open ROM…");
+    buttonLayout->addWidget(displayButton, 1);
+    buttonLayout->addWidget(phoneButton, 1);
+    buttonLayout->addWidget(openButton, 1);
+    contentLayout->addLayout(buttonLayout);
+
+    connect(displayButton, &QPushButton::clicked, this, &MainWindow::onOpenWideMelonSettings);
+    connect(phoneButton, &QPushButton::clicked, this, &MainWindow::onOpenPhoneScreenSettings);
+    connect(openButton, &QPushButton::clicked, this, &MainWindow::onOpenFile);
+    connect(homeRecentList, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem* item)
+    {
+        openRecentFile(item->data(Qt::UserRole).toString());
+    });
+
+    pageLayout->addWidget(content, 0, Qt::AlignHCenter);
+    pageLayout->addStretch(3);
+
+    panel->installEventFilter(this);
+    homePanel->setGeometry(panel->rect());
+    updateHomePanel();
+    homePanel->setVisible(!emuThread->emuIsActive());
+    homePanel->raise();
+}
+
+void MainWindow::updateHomePanel()
+{
+    if (!homeRecentList)
+        return;
+
+    homeRecentList->clear();
+    const int count = std::min(kMaxRecentROMs, static_cast<int>(recentFileList.size()));
+    for (int i = 0; i < count; ++i)
+    {
+        const QString fullPath = recentFileList.at(i);
+        const QString archivePath = fullPath.section('|', 0, 0);
+        const QString archiveMember = fullPath.section('|', 1, 1);
+        QString displayName = archiveMember.isEmpty()
+            ? QFileInfo(archivePath).fileName()
+            : QFileInfo(archiveMember).fileName();
+        if (displayName.isEmpty())
+            displayName = fullPath;
+
+        auto item = new QListWidgetItem(displayName, homeRecentList);
+        item->setData(Qt::UserRole, fullPath);
+        item->setToolTip(fullPath);
+    }
+
+    if (count == 0)
+    {
+        auto item = new QListWidgetItem("No recent ROMs yet", homeRecentList);
+        item->setFlags(Qt::NoItemFlags);
+        item->setForeground(QColor(255, 255, 255, 125));
+    }
+}
+
+bool MainWindow::eventFilter(QObject* watched, QEvent* event)
+{
+    if (watched == panel && homePanel &&
+        (event->type() == QEvent::Resize || event->type() == QEvent::Show))
+    {
+        homePanel->setGeometry(panel->rect());
+        homePanel->raise();
+    }
+    return QMainWindow::eventFilter(watched, event);
 }
 
 GL::Context* MainWindow::getOGLContext()
@@ -1414,6 +1653,8 @@ void MainWindow::loadRecentFilesMenu(bool loadcfg)
 
     if (recentFileList.empty())
         actClearRecentList->setEnabled(false);
+
+    updateHomePanel();
 }
 
 void MainWindow::updateRecentFilesMenu()
@@ -1437,7 +1678,11 @@ void MainWindow::updateRecentFilesMenu()
 void MainWindow::onClickRecentFile()
 {
     QAction *act = (QAction *)sender();
-    QString filename = act->data().toString();
+    openRecentFile(act->data().toString());
+}
+
+void MainWindow::openRecentFile(const QString& filename)
+{
 
     if (!verifySetup())
         return;
@@ -2229,6 +2474,9 @@ void MainWindow::onScreenEmphasisToggled()
 
 void MainWindow::onEmuStart()
 {
+    if (homePanel)
+        homePanel->hide();
+
     if (!hasMenu) return;
 
     for (int i = 1; i < 9; i++)
@@ -2254,6 +2502,13 @@ void MainWindow::onEmuStart()
 
 void MainWindow::onEmuStop()
 {
+    updateHomePanel();
+    if (homePanel)
+    {
+        homePanel->show();
+        homePanel->raise();
+    }
+
     if (!hasMenu) return;
 
     for (int i = 0; i < 9; i++)
