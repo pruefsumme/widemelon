@@ -257,6 +257,7 @@ jobs:
           path: dist/WideMelon.app
           if-no-files-found: error
           compression-level: 0
+          retention-days: 1
       - name: Upload release application
         uses: actions/upload-artifact@v7
         with:
@@ -264,6 +265,7 @@ jobs:
           path: dist/WideMelon-${{ needs.version.outputs.version }}-${{ matrix.release_asset }}
           if-no-files-found: error
           compression-level: 0
+          retention-days: 1
       - name: Upload dependency source archive
         uses: actions/upload-artifact@v7
         with:
@@ -271,6 +273,7 @@ jobs:
           path: dist/widemelon-${{ needs.version.outputs.version }}-${{ matrix.platform }}-dependency-source.tar.gz
           if-no-files-found: error
           compression-level: 0
+          retention-days: 1
 
   publish:
     if: inputs.publish_release

@@ -117,6 +117,7 @@ jobs:
           path: dist/WideMelon-${{ env.VERSION }}-x86_64.AppImage
           if-no-files-found: error
           compression-level: 0
+          retention-days: 1
 
       - name: Upload Debian package
         uses: actions/upload-artifact@v7
@@ -125,6 +126,7 @@ jobs:
           path: dist/widemelon_${{ env.VERSION }}-1_amd64.deb
           if-no-files-found: error
           compression-level: 0
+          retention-days: 1
 
       - name: Upload Linux source inputs
         uses: actions/upload-artifact@v7
@@ -134,3 +136,4 @@ jobs:
             dist/widemelon-${{ env.VERSION }}-source.tar.xz
             dist/widemelon-${{ env.VERSION }}-third-party-source.tar.xz
           if-no-files-found: error
+          retention-days: 1
