@@ -3,7 +3,7 @@
 [Desktop Entry]
 Name=WideMelon
 GenericName=Nintendo DS Emulator
-Comment=Experimental widescreen Nintendo DS emulator based on melonDS
+Comment=Widescreen Nintendo DS emulator with an optional phone controller
 Exec=widemelon %f
 Type=Application
 Categories=Game;Emulator;

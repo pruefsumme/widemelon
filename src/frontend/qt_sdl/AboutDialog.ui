@@ -131,7 +131,7 @@
           <bool>true</bool>
          </property>
          <property name="text">
-          <string>Based on &lt;a href=&quot;https://github.com/melonDS-emu/melonDS&quot;&gt;melonDS&lt;/a&gt; by Arisotura, the melonDS team and contributors. WideMelon modifications are maintained independently.</string>
+          <string>Widescreen Nintendo DS emulation with an optional phone screen and controller. Based on &lt;a href=&quot;https://github.com/melonDS-emu/melonDS&quot;&gt;melonDS&lt;/a&gt; by Arisotura, the melonDS team and contributors; WideMelon is maintained independently.</string>
          </property>
          <property name="openExternalLinks">
           <bool>true</bool>
