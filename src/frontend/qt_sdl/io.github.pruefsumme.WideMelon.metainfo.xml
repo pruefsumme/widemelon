@@ -21,12 +21,14 @@
     <binary>widemelon</binary>
   </provides>
   <releases>
-    <release version="1.0.1" date="2026-09-11">
+    <release version="1.0.2" date="2026-09-11">
       <description>
         <ul>
           <li>Adds a new home screen with the WideMelon logo and recent ROMs.</li>
           <li>Adds quick access to display settings, phone pairing, and ROM selection.</li>
           <li>Separates display settings from the phone connection dialog.</li>
+          <li>Keeps the new home screen visible above the OpenGL renderer while idle.</li>
+          <li>Fixes a Wayland crash when opening a recent ROM from the home screen.</li>
         </ul>
       </description>
     </release>

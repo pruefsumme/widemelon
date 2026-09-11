@@ -110,15 +110,16 @@ patch release such as `v1.0.1`:
 2. Update `RELEASE_NOTES.md`, the AppStream release entry in
    `src/frontend/qt_sdl/io.github.pruefsumme.WideMelon.metainfo.xml`, and any
    versioned documentation examples that describe the current release.
-3. Run `./scripts/build.sh`, push the release branch, and manually dispatch the
-   Release workflow. Do not tag while any platform or required smoke test is
-   failing.
-4. Merge the validated release PR into `main` and create `vX.Y.Z` on that exact
-   merge commit. Never move or reuse a published tag.
-5. Push the tag. The tagged workflow must publish the complete GitHub Release
-   before its gated AUR job renders checksums and updates `widemelon`,
-   `widemelon-git`, and `widemelon-bin`.
+3. Run `./scripts/build.sh`, push the release branch, and require the ordinary
+   pull-request CI plus any relevant manual smoke tests to pass.
+4. Merge the validated release PR into `main` and verify that `main` points to
+   the intended merge commit. Do not create or push the release tag manually.
+5. On that exact `main` commit, manually dispatch the Release workflow with
+   `publish_release` enabled. It builds and tests every platform once, creates
+   `vX.Y.Z` only after all packages pass, publishes the complete GitHub Release,
+   then renders checksums and updates `widemelon`, `widemelon-git`, and
+   `widemelon-bin`. Never move or reuse a published tag.
 
 Do not manually replace the checksum tokens under `packaging/aur/` or commit
 generated release recipes. `scripts/generate-aur.py` resolves them from the
-immutable tag archive and published AppImage during the tagged workflow.
+immutable tag archive and published AppImage during the publishing workflow.
