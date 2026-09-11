@@ -15,7 +15,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg" alt="GPL-3.0-or-later"></a>
 </p>
 
-WideMelon is a Nintendo DS emulator built from melonDS that gives supported
+WideMelon is a DS emulator built from melonDS that gives supported
 games a genuinely wider 3D view. It reveals more of the game world at the
 sides while keeping menus, sprites, videos, and the touchscreen at their
 original proportions.
