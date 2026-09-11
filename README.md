@@ -5,7 +5,7 @@
 <h1 align="center">WideMelon</h1>
 
 <p align="center">
-  A widescreen solution that gives Nintendo DS games the way they are meant to be played.
+  See more of Nintendo DS games without stretching their original 2D presentation.
 </p>
 
 <p align="center">
@@ -25,10 +25,7 @@ Get Windows, macOS, and Linux builds from the
 - Windows: download the x64 `.exe` and open it directly.
 - macOS: choose the Apple Silicon or Intel `.dmg`, then drag WideMelon to
   Applications.
-- Ubuntu/Debian: install the `amd64.deb` package.
-- Other x64 Linux distributions: mark the AppImage executable and open it.
-- Arch Linux: install `widemelon`, `widemelon-git`, or `widemelon-bin` from
-  the AUR. The variants conflict and all launch as `widemelon`.
+- Linux: use the installation commands below.
 
 Windows builds are unsigned and can show a SmartScreen warning. macOS builds
 are ad-hoc signed unless stated otherwise and may need approval in
@@ -36,6 +33,40 @@ are ad-hoc signed unless stated otherwise and may need approval in
 security checks globally; only approve files downloaded from this repository.
 Development builds are available from the
 [Release workflow](https://github.com/pruefsumme/widemelon/actions/workflows/release.yml).
+
+### Linux installation
+
+Set the release version you want to install:
+
+```sh
+VERSION=1.0.0
+```
+
+On Ubuntu or Debian, download and install the package:
+
+```sh
+wget "https://github.com/pruefsumme/widemelon/releases/download/v${VERSION}/widemelon_${VERSION}-1_amd64.deb"
+sudo apt install "./widemelon_${VERSION}-1_amd64.deb"
+```
+
+On another x86_64 Linux distribution, download and run the AppImage:
+
+```sh
+wget "https://github.com/pruefsumme/widemelon/releases/download/v${VERSION}/WideMelon-${VERSION}-x86_64.AppImage"
+chmod +x "WideMelon-${VERSION}-x86_64.AppImage"
+./"WideMelon-${VERSION}-x86_64.AppImage"
+```
+
+On Arch Linux, build one of the three conflicting AUR variants. Replace
+`widemelon` with `widemelon-git` or `widemelon-bin` if desired:
+
+```sh
+git clone https://aur.archlinux.org/widemelon.git
+cd widemelon
+makepkg -si
+```
+
+Every variant installs the `widemelon` command and the same desktop entry.
 
 ## How to use
 

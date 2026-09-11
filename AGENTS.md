@@ -99,3 +99,26 @@ The automated tests do not contain a ROM and cannot prove game compatibility, sh
 - Preserve upstream copyright and license notices. Mark new WideMelon-owned files GPL-3.0-or-later.
 - Keep documentation, dependency pins, license notes, and test commands aligned with the implementation.
 - Use the repository's existing commit conventions when commits are requested or part of the workflow.
+
+## Release versioning
+
+Release from `main`, never directly from an unmerged feature branch. For a
+patch release such as `v1.0.1`:
+
+1. Change `WIDEMELON_VERSION` in `CMakeLists.txt` to the exact semantic version
+   without the `v` prefix.
+2. Update `RELEASE_NOTES.md`, the AppStream release entry in
+   `src/frontend/qt_sdl/io.github.pruefsumme.WideMelon.metainfo.xml`, and any
+   versioned documentation examples that describe the current release.
+3. Run `./scripts/build.sh`, push the release branch, and manually dispatch the
+   Release workflow. Do not tag while any platform or required smoke test is
+   failing.
+4. Merge the validated release PR into `main` and create `vX.Y.Z` on that exact
+   merge commit. Never move or reuse a published tag.
+5. Push the tag. The tagged workflow must publish the complete GitHub Release
+   before its gated AUR job renders checksums and updates `widemelon`,
+   `widemelon-git`, and `widemelon-bin`.
+
+Do not manually replace the checksum tokens under `packaging/aur/` or commit
+generated release recipes. `scripts/generate-aur.py` resolves them from the
+immutable tag archive and published AppImage during the tagged workflow.
