@@ -233,9 +233,16 @@ int main(int argc, char** argv)
 
     // Two sockets can finish the handshake before either authenticates.
     QWebSocket first, second;
-    int firstMessages = 0, secondMessages = 0, frameCount = 0;
+    int secondMessages = 0, frameCount = 0;
+    bool firstReceivedHello = false;
     quint32 receivedSequence = 0;
-    QObject::connect(&first, &QWebSocket::textMessageReceived, [&] { firstMessages++; });
+    QObject::connect(&first, &QWebSocket::textMessageReceived, [&](const QString& text) {
+        const auto message = QJsonDocument::fromJson(text.toUtf8()).object();
+        const QString type = message.value("type").toString();
+        if (type == "hello") firstReceivedHello = true;
+        if (type == "ping")
+            send(first, {{"v", 2}, {"type", "pong"}, {"sent", message.value("sent")}});
+    });
     QObject::connect(&second, &QWebSocket::textMessageReceived, [&] { secondMessages++; });
     QObject::connect(&first, &QWebSocket::binaryMessageReceived, [&](const QByteArray& packet) {
         frameCount++;
@@ -243,9 +250,9 @@ int main(int argc, char** argv)
     });
     CHECK(open(first) && open(second));
     auth(first, originalCode);
+    CHECK(waitUntil([&] { return bridge.isConnected() && firstReceivedHello; }, kSlowBridgeTimeoutMs));
     auth(second, originalCode);
-    CHECK(waitUntil([&] { return bridge.isConnected() && firstMessages == 1
-        && second.state() == QAbstractSocket::UnconnectedState; }, kSlowBridgeTimeoutMs));
+    CHECK(waitUntil([&] { return second.state() == QAbstractSocket::UnconnectedState; }, kSlowBridgeTimeoutMs));
     CHECK(secondMessages == 0);
     bridge.submitFrame(frame, 2.5);
     CHECK(waitUntil([&] { return frameCount == 1; }));
@@ -296,11 +303,6 @@ int main(int argc, char** argv)
         CHECK(bridge.remoteKeyMask() == (0xFFFU ^ 0x401U));
     }
     CHECK(bridge.isConnected() && bridge.metrics().framesSent == framesBeforeStroke);
-    QObject::connect(&first, &QWebSocket::textMessageReceived, [&](const QString& text) {
-        const auto message = QJsonDocument::fromJson(text.toUtf8()).object();
-        if (message.value("type").toString() == "ping")
-            send(first, {{"v", 2}, {"type", "pong"}, {"sent", message.value("sent")}});
-    });
     CHECK(waitUntil([&] { return bridge.metrics().offeredFps > 0; }, kSlowBridgeTimeoutMs));
     CHECK(bridge.exportDiagnostics(diagnostics.filePath("timing.json"), {}));
     QFile timingReport(diagnostics.filePath("timing.json"));
