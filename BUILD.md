@@ -210,16 +210,17 @@ WIDEMELON_PHONE_LOG_LEVEL=debug WIDEMELON_PHONE_LOG_FILE=1 ./widemelon
 
 ## Release packaging
 
-`.github/workflows/release.yml` runs only for `v*` tags and manual dispatches.
-It builds direct Windows, macOS DMG, Linux AppImage, and Debian downloads, runs
-tests, packages exact dependency sources, and publishes only after every
-platform succeeds. Manual runs upload development artifacts without creating a
-GitHub release or changing AUR. A `v1.0.2` tag must match `WIDEMELON_VERSION` in
-`CMakeLists.txt` to publish. Release notes come from `RELEASE_NOTES.md`.
-`SHA256SUMS` covers every published asset. Ordinary branch pushes use the faster
-CI workflow.
+`.github/workflows/release.yml` runs by manual dispatch. It builds direct
+Windows, macOS DMG, Linux AppImage, and Debian downloads, runs tests, and
+packages exact dependency sources. A normal dispatch uploads development
+artifacts only. A dispatch from `main` with `publish_release` enabled builds all
+platforms once, creates `v1.0.2` on the exact tested commit only after every
+package succeeds, publishes the GitHub Release, and then updates AUR. The tag
+must not already exist, and `WIDEMELON_VERSION` must match the intended release.
+Release notes come from `RELEASE_NOTES.md`; `SHA256SUMS` covers every published
+asset. Ordinary branch pushes use the faster CI workflow.
 
-After a tagged GitHub release completes, the workflow renders and clean-builds
+After the GitHub release is published, the workflow renders and clean-builds
 the `widemelon`, `widemelon-git`, and `widemelon-bin` recipes, then updates their
 AUR repositories sequentially. Publication requires a dedicated Ed25519 private
 key in the repository secret `AUR_SSH_PRIVATE_KEY`; its public key must be

@@ -4,8 +4,12 @@ name: Release
 
 on:
   workflow_dispatch:
-  push:
-    tags: ["v*"]
+    inputs:
+      publish_release:
+        description: Build, tag the selected main commit, and publish the release
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -21,13 +25,22 @@ jobs:
       version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - id: version
         shell: bash
+        env:
+          PUBLISH_RELEASE: ${{ inputs.publish_release }}
         run: |
+          set -euo pipefail
           version=$(sed -n 's/^set(WIDEMELON_VERSION "\([0-9.]*\)")/\1/p' CMakeLists.txt)
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
-          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
-            [[ "$GITHUB_REF_NAME" == "v$version" ]]
+          if [[ "$PUBLISH_RELEASE" == true ]]; then
+            [[ "$GITHUB_REF" == refs/heads/main ]]
+            if git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null; then
+              echo "Tag v$version already exists; refusing to move or reuse it." >&2
+              exit 1
+            fi
           else
             version="$version-dev.$GITHUB_RUN_NUMBER"
           fi
@@ -260,13 +273,15 @@ jobs:
           compression-level: 0
 
   publish:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: inputs.publish_release
     needs: [version, linux, native]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
@@ -317,12 +332,23 @@ jobs:
           )
           paths=()
           for asset in "${assets[@]}" SHA256SUMS; do paths+=("dist/$asset"); done
-          gh release create "$GITHUB_REF_NAME" "${paths[@]}" \
+          tag="v$VERSION"
+          [[ "$GITHUB_REF" == refs/heads/main ]]
+          [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+            echo "Tag $tag appeared while the release was building; refusing to reuse it." >&2
+            exit 1
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git tag -a "$tag" "$GITHUB_SHA" -m "WideMelon $VERSION"
+          git push origin "$tag"
+          gh release create "$tag" "${paths[@]}" \
             --verify-tag --title "WideMelon $VERSION" --notes-file RELEASE_NOTES.md --latest
 
   aur:
     name: Publish AUR packages
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: inputs.publish_release
     needs: [version, publish]
     runs-on: ubuntu-24.04
     permissions:
@@ -340,14 +366,14 @@ jobs:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
-          [[ "$GITHUB_REF_NAME" == "v$VERSION" ]]
+          [[ "$GITHUB_REF" == refs/heads/main ]]
           [[ "$(git rev-parse "v$VERSION^{commit}")" == "$GITHUB_SHA" ]]
-          release=$(gh release view "$GITHUB_REF_NAME" --json isPrerelease,publishedAt --jq \
+          release=$(gh release view "v$VERSION" --json isPrerelease,publishedAt --jq \
             '[.isPrerelease, .publishedAt != null] | @tsv')
           [[ "$release" == $'false\ttrue' ]]
 
           mkdir -p dist
-          gh release download "$GITHUB_REF_NAME" --dir dist \
+          gh release download "v$VERSION" --dir dist \
             --pattern "WideMelon-$VERSION-x86_64.AppImage" --pattern SHA256SUMS
           appimage_sum=$(grep -F "  WideMelon-$VERSION-x86_64.AppImage" dist/SHA256SUMS)
           [[ -n "$appimage_sum" ]]

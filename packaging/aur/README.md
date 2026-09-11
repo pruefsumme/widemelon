@@ -5,7 +5,7 @@
 
 These directories are the canonical AUR recipes for `widemelon`,
 `widemelon-git`, and `widemelon-bin`. The checked-in `@...@` values are release
-template tokens, not checksums that may be published. On a tagged release,
+template tokens, not checksums that may be published. During release publication,
 `scripts/generate-aur.py` downloads or consumes the exact tag archive and
 published AppImage, replaces every token, and asks Arch's `makepkg` to recreate
 each `.SRCINFO` from its `PKGBUILD`.
