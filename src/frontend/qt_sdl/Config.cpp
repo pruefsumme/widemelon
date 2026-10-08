@@ -121,6 +121,7 @@ DefaultList<bool> DefaultBools =
     {"WideMelon.Phone.ConsoleLog", true},
     {"WideMelon.Phone.FileLog", false},
     {"WideMelon.Phone.SynchronousCapture", false},
+    {"WideMelon.Phone.ReuseLastPairingCode", true},
 };
 
 DefaultList<std::string> DefaultStrings =

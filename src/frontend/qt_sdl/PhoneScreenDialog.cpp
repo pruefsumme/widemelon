@@ -292,6 +292,9 @@ PhoneScreenDialog::PhoneScreenDialog(PhoneBridgeManager* manager, QWidget* paren
     codeFont.setPointSize(codeFont.pointSize() + 4);
     pairingCode->setFont(codeFont);
     sessionDetails->addRow("Manual code", pairingCode);
+    reuseLastPairingCode = new QCheckBox("Reuse last code");
+    reuseLastPairingCode->setToolTip("Use the previous manual pairing code when the server starts.");
+    sessionDetails->addRow(QString(), reuseLastPairingCode);
     connectedClient = new QLabel("None");
     sessionDetails->addRow("Connected phone", connectedClient);
     sessionLayout->addLayout(sessionDetails, 0, 0, 2, 1);
@@ -454,6 +457,7 @@ PhoneScreenDialog::PhoneScreenDialog(PhoneBridgeManager* manager, QWidget* paren
     connect(logLevel, qOverload<int>(&QComboBox::currentIndexChanged), this, [this] { applyControls(); });
     connect(consoleLog, &QCheckBox::toggled, this, [this] { applyControls(); });
     connect(fileLog, &QCheckBox::toggled, this, [this] { applyControls(); });
+    connect(reuseLastPairingCode, &QCheckBox::toggled, this, [this] { applyControls(); });
     if (manager) connect(manager, &PhoneBridgeManager::pairingChanged, this, &PhoneScreenDialog::updateUi);
     updateUi();
 }
@@ -499,6 +503,7 @@ void PhoneScreenDialog::loadControls()
     consoleLog->setChecked(value.consoleLog);
     fileLog->setChecked(value.fileLog);
     synchronousCapture->setChecked(value.synchronousCapture);
+    reuseLastPairingCode->setChecked(value.reuseLastPairingCode);
 }
 
 void PhoneScreenDialog::applyControls()
@@ -511,6 +516,7 @@ void PhoneScreenDialog::applyControls()
     value.consoleLog = consoleLog->isChecked();
     value.fileLog = fileLog->isChecked();
     value.synchronousCapture = synchronousCapture->isChecked();
+    value.reuseLastPairingCode = reuseLastPairingCode->isChecked();
     PhoneBridgeManager::saveSettings(value);
     if (manager) manager->setSettings(value);
 }
@@ -621,6 +627,7 @@ void PhoneScreenDialog::updateUi()
     interfaceBox->setEnabled(!listening);
     port->setEnabled(!listening);
     synchronousCapture->setEnabled(!listening);
+    reuseLastPairingCode->setEnabled(!listening);
     testPattern->setEnabled(listening && connected);
     if (manager)
     {

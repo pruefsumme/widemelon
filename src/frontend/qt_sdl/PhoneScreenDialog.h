@@ -47,6 +47,7 @@ private:
     QCheckBox* consoleLog;
     QCheckBox* fileLog;
     QCheckBox* synchronousCapture;
+    QCheckBox* reuseLastPairingCode;
     QCheckBox* testPattern;
     QLabel* status;
     QLabel* address;
