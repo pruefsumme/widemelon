@@ -203,6 +203,8 @@ public:
 
         fullscreen = new QCheckBox("Start fullscreen");
         root->addWidget(fullscreen);
+        autoStartPhoneServer = new QCheckBox("Start phone server automatically");
+        root->addWidget(autoStartPhoneServer);
 
         auto buttons = new QDialogButtonBox(QDialogButtonBox::Cancel, Qt::Horizontal, this);
         buttons->addButton("Save", QDialogButtonBox::AcceptRole);
@@ -227,6 +229,7 @@ public:
         windowHeight->setValue(std::clamp(savedWindowHeight > 0 ? savedWindowHeight : kDefaultWindowHeight, 480, 4320));
         integerScaling->setChecked(global.GetBool("WideMelon.IntegerScaling"));
         fullscreen->setChecked(global.GetBool("WideMelon.Fullscreen"));
+        autoStartPhoneServer->setChecked(global.GetBool("WideMelon.AutoStartPhoneServer"));
         connect(viewport, qOverload<int>(&QComboBox::currentIndexChanged), this,
                 [this] { updateViewportControls(); });
         connect(resolution, qOverload<int>(&QComboBox::currentIndexChanged), this,
@@ -264,6 +267,7 @@ public:
                      integerScaling->isChecked(), fullscreen->isChecked());
         auto global = Config::GetGlobalTable();
         global.SetInt("WideMelon.Resolution", resolutionIndex);
+        global.SetBool("WideMelon.AutoStartPhoneServer", autoStartPhoneServer->isChecked());
         Config::Save();
     }
 
@@ -336,6 +340,7 @@ private:
     QComboBox* scale;
     QCheckBox* integerScaling;
     QCheckBox* fullscreen;
+    QCheckBox* autoStartPhoneServer;
     QPointer<PhoneScreenDialog> phoneDialog;
 };
 

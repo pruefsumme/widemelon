@@ -146,6 +146,9 @@ EmuInstance::EmuInstance(int inst) : deleting(false),
     if (inst == 0) topWindow = nullptr;
     createWindow();
 
+    if (phoneBridge && globalCfg.GetBool("WideMelon.AutoStartPhoneServer"))
+        phoneBridge->start();
+
     emuThread->start();
 
     // if any extra windows were saved as enabled, open them
