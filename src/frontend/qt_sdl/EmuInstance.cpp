@@ -30,6 +30,7 @@
 
 #include <QDateTime>
 #include <QMessageBox>
+#include <QTimer>
 
 #include <zstd.h>
 #ifdef ARCHIVE_SUPPORT_ENABLED
@@ -49,6 +50,7 @@
 #include "FreeBIOS.h"
 #include "main.h"
 #include "PhoneBridge.h"
+#include "PhoneScreenDialog.h"
 
 #include "NDSCart/CartSD.h"
 
@@ -147,7 +149,13 @@ EmuInstance::EmuInstance(int inst) : deleting(false),
     createWindow();
 
     if (phoneBridge && globalCfg.GetBool("WideMelon.AutoStartPhoneServer"))
+    {
         phoneBridge->start();
+        QTimer::singleShot(0, mainWindow, [this]
+        {
+            WideMelon::OpenPhoneScreenSettings(phoneBridge.get(), mainWindow);
+        });
+    }
 
     emuThread->start();
 
