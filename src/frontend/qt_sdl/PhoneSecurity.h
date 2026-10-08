@@ -15,7 +15,7 @@ public:
     PhonePairingCredentials() = default;
     PhonePairingCredentials(const PhonePairingCredentials&) = delete;
     PhonePairingCredentials& operator=(const PhonePairingCredentials&) = delete;
-    void regenerate();
+    void regenerate(const QString& reusableCode = {});
     void clear();
     bool matches(const QString& candidate) const;
 

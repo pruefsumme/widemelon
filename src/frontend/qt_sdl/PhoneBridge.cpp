@@ -263,6 +263,7 @@ PhoneBridgeSettings PhoneBridgeManager::loadSettings()
     value.consoleLog = cfg.GetBool("WideMelon.Phone.ConsoleLog");
     value.fileLog = cfg.GetBool("WideMelon.Phone.FileLog");
     value.synchronousCapture = cfg.GetBool("WideMelon.Phone.SynchronousCapture");
+    value.lastPairingCode = QString::fromStdString(cfg.GetString("WideMelon.Phone.LastPairingCode"));
     value.layoutJson = PhoneControllerLayout::fromJson(
         QString::fromStdString(cfg.GetString("WideMelon.Phone.Layout"))).toJson();
 
@@ -295,6 +296,7 @@ void PhoneBridgeManager::saveSettings(const PhoneBridgeSettings& value)
     cfg.SetBool("WideMelon.Phone.ConsoleLog", value.consoleLog);
     cfg.SetBool("WideMelon.Phone.FileLog", value.fileLog);
     cfg.SetBool("WideMelon.Phone.SynchronousCapture", value.synchronousCapture);
+    cfg.SetString("WideMelon.Phone.LastPairingCode", value.lastPairingCode.toStdString());
     cfg.SetString("WideMelon.Phone.Layout", value.layoutJson.toStdString());
     Config::Save();
 }
@@ -394,7 +396,7 @@ bool PhoneBridgeManager::start()
         emit statusChanged();
         return false;
     }
-    generatePairingCredentials();
+    generatePairingCredentials(true);
     heartbeatClock.start();
     lastPerformanceSampleMs = lastHeartbeatCheckMs = maxHeartbeatDelayMs = 0;
     performanceSamples = {};
@@ -487,7 +489,7 @@ void PhoneBridgeManager::regeneratePairing()
     const QSet<QWebSocket*> pending = pendingClients;
     for (QWebSocket* socket : pending)
         closePendingClient(socket, QWebSocketProtocol::CloseCodePolicyViolated, "Pairing changed");
-    generatePairingCredentials();
+    generatePairingCredentials(false);
     currentStatus = "Waiting for paired phone";
     log(Info, "security", "Pairing credentials regenerated");
     emit statusChanged();
@@ -858,10 +860,15 @@ void PhoneBridgeManager::recordAuthenticationFailure(const QHostAddress& peer, q
     log(Info, "security", "Rejected invalid pairing credentials from " + sanitizedAddress(peer));
 }
 
-void PhoneBridgeManager::generatePairingCredentials()
+void PhoneBridgeManager::generatePairingCredentials(bool reuseLastCode)
 {
     clearPairingCredentials();
-    pairingCredentials.regenerate();
+    pairingCredentials.regenerate(reuseLastCode ? currentSettings.lastPairingCode : QString());
+    if (currentSettings.lastPairingCode != pairingCredentials.code())
+    {
+        currentSettings.lastPairingCode = pairingCredentials.code();
+        saveSettings(currentSettings);
+    }
     authenticationLimiter.clear();
     emit pairingChanged();
 }

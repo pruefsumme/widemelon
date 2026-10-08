@@ -28,9 +28,17 @@ bool constantTimeEqual(const QByteArray& left, const QByteArray& right)
     }
     return difference == 0;
 }
+
+bool isReusableCode(const QString& code)
+{
+    if (code.size() != 6 && code.size() != 10) return false;
+    for (const QChar character : code)
+        if (!character.isDigit()) return false;
+    return true;
+}
 }
 
-void PhonePairingCredentials::regenerate()
+void PhonePairingCredentials::regenerate(const QString& reusableCode)
 {
     clear();
     quint32 words[8];
@@ -38,12 +46,17 @@ void PhonePairingCredentials::regenerate()
     secretValue = QByteArray(reinterpret_cast<const char*>(words), sizeof(words))
         .toBase64(QByteArray::Base64UrlEncoding | QByteArray::OmitTrailingEquals);
 
-    constexpr quint64 range = 10000000000ULL;
-    constexpr quint64 maximum = std::numeric_limits<quint64>::max();
-    constexpr quint64 limit = maximum - (maximum % range);
-    quint64 randomValue;
-    do randomValue = QRandomGenerator::system()->generate64(); while (randomValue >= limit);
-    codeValue = QString("%1").arg(randomValue % range, 10, 10, QLatin1Char('0'));
+    if (isReusableCode(reusableCode))
+        codeValue = reusableCode;
+    else
+    {
+        constexpr quint64 range = 10000000000ULL;
+        constexpr quint64 maximum = std::numeric_limits<quint64>::max();
+        constexpr quint64 limit = maximum - (maximum % range);
+        quint64 randomValue;
+        do randomValue = QRandomGenerator::system()->generate64(); while (randomValue >= limit);
+        codeValue = QString("%1").arg(randomValue % range, 10, 10, QLatin1Char('0'));
+    }
     secretHash = hash(secretValue);
     codeHash = hash(codeValue.toUtf8());
 }

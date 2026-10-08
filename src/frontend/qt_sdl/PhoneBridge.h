@@ -38,6 +38,7 @@ struct PhoneBridgeSettings
     bool consoleLog = true;
     bool fileLog = false;
     bool synchronousCapture = false;
+    QString lastPairingCode;
     QString layoutJson;
 };
 
@@ -149,7 +150,7 @@ private:
     bool peerAllowed(const QHostAddress& peer) const;
     bool authenticationTemporarilyBlocked(const QHostAddress& peer, qint64 now);
     void recordAuthenticationFailure(const QHostAddress& peer, qint64 now);
-    void generatePairingCredentials();
+    void generatePairingCredentials(bool reuseLastCode);
     void clearPairingCredentials();
     void handleTextMessage(const QString& message);
     void encodedFrameReady(quint32 generation, quint32 sequence, const QByteArray& jpeg, double deliveryMs);
