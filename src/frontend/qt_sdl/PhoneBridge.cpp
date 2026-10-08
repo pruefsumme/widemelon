@@ -867,7 +867,9 @@ void PhoneBridgeManager::generatePairingCredentials(bool reuseLastCode)
     if (currentSettings.lastPairingCode != pairingCredentials.code())
     {
         currentSettings.lastPairingCode = pairingCredentials.code();
-        saveSettings(currentSettings);
+        auto cfg = Config::GetGlobalTable();
+        cfg.SetString("WideMelon.Phone.LastPairingCode", currentSettings.lastPairingCode.toStdString());
+        Config::Save();
     }
     authenticationLimiter.clear();
     emit pairingChanged();

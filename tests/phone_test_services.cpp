@@ -19,8 +19,8 @@ bool Table::GetBool(const std::string&) { return false; }
 std::string Table::GetString(const std::string&) { return {}; }
 void Table::SetInt(const std::string&, int) { std::abort(); }
 void Table::SetBool(const std::string&, bool) { std::abort(); }
-void Table::SetString(const std::string&, const std::string&) { std::abort(); }
-void Save() { std::abort(); }
+void Table::SetString(const std::string&, const std::string&) {}
+void Save() {}
 }
 
 namespace melonDS::Platform
