@@ -263,6 +263,7 @@ PhoneBridgeSettings PhoneBridgeManager::loadSettings()
     value.consoleLog = cfg.GetBool("WideMelon.Phone.ConsoleLog");
     value.fileLog = cfg.GetBool("WideMelon.Phone.FileLog");
     value.synchronousCapture = cfg.GetBool("WideMelon.Phone.SynchronousCapture");
+    value.reuseLastPairingCode = cfg.GetBool("WideMelon.Phone.ReuseLastPairingCode");
     value.lastPairingCode = QString::fromStdString(cfg.GetString("WideMelon.Phone.LastPairingCode"));
     value.layoutJson = PhoneControllerLayout::fromJson(
         QString::fromStdString(cfg.GetString("WideMelon.Phone.Layout"))).toJson();
@@ -296,6 +297,7 @@ void PhoneBridgeManager::saveSettings(const PhoneBridgeSettings& value)
     cfg.SetBool("WideMelon.Phone.ConsoleLog", value.consoleLog);
     cfg.SetBool("WideMelon.Phone.FileLog", value.fileLog);
     cfg.SetBool("WideMelon.Phone.SynchronousCapture", value.synchronousCapture);
+    cfg.SetBool("WideMelon.Phone.ReuseLastPairingCode", value.reuseLastPairingCode);
     cfg.SetString("WideMelon.Phone.LastPairingCode", value.lastPairingCode.toStdString());
     cfg.SetString("WideMelon.Phone.Layout", value.layoutJson.toStdString());
     Config::Save();
@@ -396,7 +398,7 @@ bool PhoneBridgeManager::start()
         emit statusChanged();
         return false;
     }
-    generatePairingCredentials(true);
+    generatePairingCredentials(currentSettings.reuseLastPairingCode);
     heartbeatClock.start();
     lastPerformanceSampleMs = lastHeartbeatCheckMs = maxHeartbeatDelayMs = 0;
     performanceSamples = {};

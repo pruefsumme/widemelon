@@ -38,6 +38,7 @@ struct PhoneBridgeSettings
     bool consoleLog = true;
     bool fileLog = false;
     bool synchronousCapture = false;
+    bool reuseLastPairingCode = true;
     QString lastPairingCode;
     QString layoutJson;
 };
