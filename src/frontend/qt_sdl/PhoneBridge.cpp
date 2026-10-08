@@ -263,6 +263,7 @@ PhoneBridgeSettings PhoneBridgeManager::loadSettings()
     value.consoleLog = cfg.GetBool("WideMelon.Phone.ConsoleLog");
     value.fileLog = cfg.GetBool("WideMelon.Phone.FileLog");
     value.synchronousCapture = cfg.GetBool("WideMelon.Phone.SynchronousCapture");
+    value.shortPairingCode = cfg.GetBool("WideMelon.Phone.ShortPairingCode");
     value.layoutJson = PhoneControllerLayout::fromJson(
         QString::fromStdString(cfg.GetString("WideMelon.Phone.Layout"))).toJson();
 
@@ -295,6 +296,7 @@ void PhoneBridgeManager::saveSettings(const PhoneBridgeSettings& value)
     cfg.SetBool("WideMelon.Phone.ConsoleLog", value.consoleLog);
     cfg.SetBool("WideMelon.Phone.FileLog", value.fileLog);
     cfg.SetBool("WideMelon.Phone.SynchronousCapture", value.synchronousCapture);
+    cfg.SetBool("WideMelon.Phone.ShortPairingCode", value.shortPairingCode);
     cfg.SetString("WideMelon.Phone.Layout", value.layoutJson.toStdString());
     Config::Save();
 }
@@ -861,7 +863,7 @@ void PhoneBridgeManager::recordAuthenticationFailure(const QHostAddress& peer, q
 void PhoneBridgeManager::generatePairingCredentials()
 {
     clearPairingCredentials();
-    pairingCredentials.regenerate();
+    pairingCredentials.regenerate(currentSettings.shortPairingCode);
     authenticationLimiter.clear();
     emit pairingChanged();
 }

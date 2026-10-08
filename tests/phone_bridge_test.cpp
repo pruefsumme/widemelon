@@ -6,6 +6,7 @@
 #include "frontend/qt_sdl/PhoneScreenDialog.h"
 
 #include <QApplication>
+#include <QCheckBox>
 #include <QLabel>
 #include <QGroupBox>
 #include <QPushButton>
@@ -184,6 +185,7 @@ int main(int argc, char** argv)
         CHECK(settings.jpegQuality >= 30 && settings.jpegQuality <= 100);
     }
     settings.consoleLog = settings.fileLog = false;
+    settings.shortPairingCode = true;
     bridge.setSettings(settings);
     bridge.setCaptureAvailable(true);
     CHECK(bridge.start());
@@ -223,8 +225,13 @@ int main(int argc, char** argv)
         return application.exec();
     }
     const QString originalCode = bridge.pairingCode();
+    CHECK(originalCode.size() == 6);
     const QString originalUrl = bridge.pairingUrl();
     PhoneScreenDialog dialog(&bridge);
+    QCheckBox* shortCodeToggle = nullptr;
+    for (QCheckBox* checkBox : dialog.findChildren<QCheckBox*>())
+        if (checkBox->text() == "Use shorter code") shortCodeToggle = checkBox;
+    CHECK(shortCodeToggle && shortCodeToggle->isChecked() && !shortCodeToggle->isEnabled());
     QLabel* qrLabel = nullptr;
     for (QLabel* label : dialog.findChildren<QLabel*>())
         if (!label->pixmap(Qt::ReturnByValue).isNull()) qrLabel = label;
