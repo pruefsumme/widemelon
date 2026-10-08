@@ -40,7 +40,7 @@ void PhonePairingCredentials::regenerate(bool shortCode)
 
     const quint64 range = shortCode ? 1000000ULL : 10000000000ULL;
     constexpr quint64 maximum = std::numeric_limits<quint64>::max();
-    constexpr quint64 limit = maximum - (maximum % range);
+    const quint64 limit = maximum - (maximum % range);
     quint64 randomValue;
     do randomValue = QRandomGenerator::system()->generate64(); while (randomValue >= limit);
     const int digits = shortCode ? 6 : 10;
