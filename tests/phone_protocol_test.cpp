@@ -131,6 +131,13 @@ int main(int argc, char** argv)
     if (!credentials.matches(QString::fromLatin1(firstSecret)) || !credentials.matches(firstCode)) return 24;
     if (credentials.matches("00000000000") || credentials.matches("wrong")) return 25;
 
+    PhonePairingCredentials shortCredentials;
+    shortCredentials.regenerate(true);
+    const QString shortCode = shortCredentials.code();
+    if (shortCode.size() != 6) return 32;
+    for (const QChar character : shortCode) if (!character.isDigit()) return 33;
+    if (!shortCredentials.matches(shortCode) || shortCredentials.matches(firstCode)) return 34;
+
     PhoneAuthenticationLimiter limiter;
     for (int attempt = 0; attempt < PhoneAuthenticationLimiter::PeerFailureLimit - 1; attempt++)
     {

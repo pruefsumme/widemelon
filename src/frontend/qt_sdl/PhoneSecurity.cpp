@@ -30,7 +30,7 @@ bool constantTimeEqual(const QByteArray& left, const QByteArray& right)
 }
 }
 
-void PhonePairingCredentials::regenerate()
+void PhonePairingCredentials::regenerate(bool shortCode)
 {
     clear();
     quint32 words[8];
@@ -38,12 +38,13 @@ void PhonePairingCredentials::regenerate()
     secretValue = QByteArray(reinterpret_cast<const char*>(words), sizeof(words))
         .toBase64(QByteArray::Base64UrlEncoding | QByteArray::OmitTrailingEquals);
 
-    constexpr quint64 range = 10000000000ULL;
+    const quint64 range = shortCode ? 1000000ULL : 10000000000ULL;
     constexpr quint64 maximum = std::numeric_limits<quint64>::max();
-    constexpr quint64 limit = maximum - (maximum % range);
+    const quint64 limit = maximum - (maximum % range);
     quint64 randomValue;
     do randomValue = QRandomGenerator::system()->generate64(); while (randomValue >= limit);
-    codeValue = QString("%1").arg(randomValue % range, 10, 10, QLatin1Char('0'));
+    const int digits = shortCode ? 6 : 10;
+    codeValue = QString("%1").arg(randomValue % range, digits, 10, QLatin1Char('0'));
     secretHash = hash(secretValue);
     codeHash = hash(codeValue.toUtf8());
 }
